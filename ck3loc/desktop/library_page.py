@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from ck3loc.core import settings
+from ck3loc.core.i18n import tr_format
 from ck3loc.desktop.theme import palette
 from ck3loc.desktop.widgets import (
     EmptyState,
@@ -131,7 +132,7 @@ class LibraryPage(QWidget):
         h.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
         h.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
         self.table.setColumnWidth(1, 105)
-        self.table.setColumnWidth(2, 70)
+        self.table.setColumnWidth(2, 92)
         self.table.setColumnWidth(3, 90)
         self.table.setColumnWidth(4, 190)
         self.table.setColumnWidth(5, 100)
@@ -177,7 +178,8 @@ class LibraryPage(QWidget):
         with_loc = [r for r in rows if r.has_loc]
         no_loc = len(rows) - len(with_loc)
         self.tile_total.set_value(
-            len(rows), f"{no_loc} без локализации" if no_loc else ""
+            len(rows),
+            tr_format("{n} без локализации", n=no_loc) if no_loc else "",
         )
         self.tile_none.set_value(sum(1 for r in with_loc if r.coverage == 0.0))
         self.tile_partial.set_value(
@@ -190,7 +192,7 @@ class LibraryPage(QWidget):
         russifiers = sum(1 for r in rows if r.translates)
         self.tile_external.set_value(
             sum(1 for r in rows if r.provider_name),
-            f"{russifiers} русификаторов" if russifiers else "",
+            tr_format("{n} русификаторов", n=russifiers) if russifiers else "",
         )
         errors = sum(1 for r in rows if r.errors)
         self.tile_errors.set_value(errors)
@@ -344,10 +346,11 @@ class LibraryPage(QWidget):
             self.footer.setText("")
             return
         self.area.setCurrentWidget(self.table)
-        self.footer.setText(
-            f"Показано {len(shown)} из {len(self.rows)} · "
-            f"двойной клик по строке — открыть карточку мода"
-        )
+        self.footer.setText(tr_format(
+            "Показано {shown} из {total} · двойной клик по строке — "
+            "открыть карточку мода",
+            shown=len(shown), total=len(self.rows),
+        ))
 
     def _open_current(self):
         # после сортировки порядок строк не совпадает со списком, поэтому

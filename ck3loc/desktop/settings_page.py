@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from ck3loc.core import settings
 from ck3loc.core.db import backups_dir, data_dir
+from ck3loc.core.i18n import DEFAULT_UI_LANG, available_languages
 from ck3loc.core.vanilla import find_ck3_game_dir, game_languages
 from ck3loc.desktop.widgets import Card, field_row
 from ck3loc.providers.registry import PROVIDERS, get_api_key, set_api_key
@@ -33,6 +34,7 @@ from ck3loc.providers.registry import PROVIDERS, get_api_key, set_api_key
 class SettingsPage(QWidget):
     theme_changed = Signal(str)
     langs_changed = Signal()
+    ui_language_changed = Signal(str)
 
     def __init__(self, theme: str = "dark", parent=None):
         super().__init__(parent)
@@ -241,6 +243,18 @@ class SettingsPage(QWidget):
 
         # --- интерфейс ---
         ui = Card("Интерфейс")
+        self.ui_lang = QComboBox()
+        for code, name in available_languages():
+            self.ui_lang.addItem(name, code)
+        idx = self.ui_lang.findData(cfg.get("ui_lang") or DEFAULT_UI_LANG)
+        self.ui_lang.setCurrentIndex(max(0, idx))
+        self.ui_lang.currentIndexChanged.connect(
+            lambda: self.ui_language_changed.emit(self.ui_lang.currentData())
+        )
+        ui.add(field_row(
+            "Язык программы", self.ui_lang,
+            "Меняется сразу. Язык перевода модов задаётся выше отдельно."))
+
         self.theme_box = QComboBox()
         self.theme_box.addItem("Тёмная", "dark")
         self.theme_box.addItem("Светлая", "light")
