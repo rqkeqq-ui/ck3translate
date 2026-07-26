@@ -1,9 +1,8 @@
 @echo off
-chcp 65001 >nul
 if not exist .venv (
-    echo Сначала запустите install.bat
+    echo Run install.bat first
     pause
     exit /b 1
 )
 call .venv\Scripts\activate.bat
-python -m ck3loc.desktop
+start "" pythonw -m ck3loc.desktop

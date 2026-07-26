@@ -231,8 +231,32 @@ class ModDialog(QDialog):
 
     def _save_write_mode(self):
         mode = self.write_mode.currentData()
+        if mode == self.ctx.project["write_mode"]:
+            return
+        outputs = self.conn.execute(
+            "SELECT COUNT(*) AS n FROM generated_outputs WHERE project_id=?",
+            (self.ctx.project_id,),
+        ).fetchone()
+        if outputs["n"] > 0:
+            answer = QMessageBox.question(
+                self, "Смена режима записи",
+                "Файлы, записанные в прежнем режиме, будут удалены "
+                "(с резервными копиями), чтобы перевод не дублировался.\n"
+                "Продолжить?",
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                idx = 0 if self.ctx.project["write_mode"] == "in_mod" else 1
+                self.write_mode.setCurrentIndex(idx)
+                return
+            from ck3loc.core.writer import remove_outputs
+
+            removed = remove_outputs(self.conn, self.ctx.project_id, self.mod_id)
+            self.overview_log.appendPlainText(
+                f"Удалено файлов прежнего режима: {len(removed)}."
+            )
         set_project_option(self.conn, self.ctx.project_id, "write_mode", mode)
-        self.ctx.project["write_mode"] = mode
+        self.reload_ctx()
+        self.refresh()
 
     def do_export(self):
         rows = rows_to_translate(self.ctx, "all")
