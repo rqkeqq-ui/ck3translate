@@ -1,0 +1,4 @@
+﻿l_english:
+ crlf_key: "CRLF line"
+ lf_key: "LF line"
+ last_key: "No trailing newline"
