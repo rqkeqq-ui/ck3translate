@@ -71,6 +71,7 @@ def build_write_plan(
     project: dict,
     units: dict,
     build_mode: str = "auto",
+    has_external_provider: bool = False,
 ) -> WritePlan:
     """Составить план записи. Ничего не пишет — только план и предпросмотр."""
     source_lang = project["source_lang"]
@@ -139,9 +140,12 @@ def build_write_plan(
         by_file.setdefault(fname, []).append((key, value))
 
     for fname, items in sorted(by_file.items()):
+        # если мод переводит отдельный мод-русификатор, наши файлы обязаны
+        # называться иначе: одноимённый файл из мода, загруженного позже,
+        # перекрывает наш целиком, и добавленные строки просто исчезнут
+        if has_external_provider and not fname.startswith("zz_ck3loc_"):
+            fname = f"zz_ck3loc_{fname}"
         target_path = lang_dir / fname
-        # никогда не трогаем чужой файл: если файл существует и он не наш —
-        # берём отличающееся имя с префиксом
         data = build_new_file(target_lang, items)
         plan.files.append(
             PlannedFile(

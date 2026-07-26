@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtGui import QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QComboBox,
+    QDialog,
     QFileDialog,
     QHBoxLayout,
     QHeaderView,
@@ -55,6 +58,7 @@ ROW_FILTERS = {
     "Проверено": {"reviewed", "approved"},
     "Конфликты и правки извне": {"conflict", "edited_outside"},
     "Родной перевод мода": {"native"},
+    "Переведено другим модом": {"external"},
     "Осиротевшие / только в цели": {"orphan", "extra"},
 }
 
@@ -72,6 +76,7 @@ class ModPage(QWidget):
         self.mod_id = ""
         self._mod_dir: Path | None = None
         self._shown_rows = []
+        self._cover_workers: set = set()
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -79,11 +84,20 @@ class ModPage(QWidget):
 
         head = QHBoxLayout()
         btn_back = QPushButton("← К библиотеке")
+        btn_back.setToolTip("Esc")
         btn_back.clicked.connect(self.back.emit)
         head.addWidget(btn_back)
         self.title = QLabel()
         self.title.setProperty("role", "h1")
         head.addWidget(self.title, stretch=1)
+        btn_folder = QPushButton("Папка мода")
+        btn_folder.setToolTip("Открыть папку мода в проводнике")
+        btn_folder.clicked.connect(self.open_mod_folder)
+        head.addWidget(btn_folder)
+        btn_ws = QPushButton("Страница в Workshop")
+        btn_ws.setToolTip("Открыть страницу мода в мастерской Steam")
+        btn_ws.clicked.connect(self.open_workshop)
+        head.addWidget(btn_ws)
         root.addLayout(head)
 
         self.tabs = QTabWidget()
@@ -103,6 +117,19 @@ class ModPage(QWidget):
 
         # карточка состояния перевода
         self.info_card = Card()
+        top_row = QHBoxLayout()
+        top_row.setSpacing(14)
+        self.cover = QLabel()
+        self.cover.setFixedSize(212, 120)
+        self.cover.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.cover.setScaledContents(False)
+        self.cover.hide()
+        top_row.addWidget(self.cover, alignment=Qt.AlignmentFlag.AlignTop)
+        body_col = QVBoxLayout()
+        body_col.setSpacing(10)
+        top_row.addLayout(body_col, stretch=1)
+        self.info_card.add_layout(top_row)
+
         cov_row = QHBoxLayout()
         cov_row.setSpacing(12)
         self.coverage_value = QLabel("—")
@@ -119,11 +146,27 @@ class ModPage(QWidget):
         self.coverage_bar.setMaximum(100)
         cov_col.addWidget(self.coverage_bar)
         cov_row.addLayout(cov_col, stretch=1)
-        self.info_card.add_layout(cov_row)
+        body_col.addLayout(cov_row)
 
         self.status_chips = QLabel()
         self.status_chips.setWordWrap(True)
-        self.info_card.add(self.status_chips)
+        body_col.addWidget(self.status_chips)
+
+        # мод-русификатор, если он найден
+        self.provider_row = QWidget()
+        pr = QHBoxLayout(self.provider_row)
+        pr.setContentsMargins(0, 0, 0, 0)
+        pr.setSpacing(8)
+        self.provider_caption = QLabel("Перевод обеспечивает мод:")
+        self.provider_caption.setProperty("role", "dim")
+        pr.addWidget(self.provider_caption)
+        self.provider_combo = QComboBox()
+        self.provider_combo.setMinimumWidth(320)
+        self.provider_combo.currentIndexChanged.connect(self._change_provider)
+        pr.addWidget(self.provider_combo, stretch=1)
+        self.provider_row.hide()
+        body_col.addWidget(self.provider_row)
+
         self.info_card.add_divider()
 
         self.info = QLabel()
@@ -459,8 +502,66 @@ class ModPage(QWidget):
 
         self.refresh_rows()
 
+        self._fill_providers()
         self._fill_diagnostics(scan)
         self._load_changes()
+        self._load_cover()
+
+    def _fill_providers(self):
+        """Показать мод-русификатор и дать выбрать другой, если кандидатов
+        несколько (бывает у сборников переводов)."""
+        from ck3loc.core import settings
+        from ck3loc.core.external_translations import find_provider_candidates
+
+        cfg = settings.load()
+        if not cfg.get("provider_detect", True):
+            self.provider_row.hide()
+            return
+        target = self.ctx.project["target_lang"]
+        cands = find_provider_candidates(
+            self.conn, self.ctx.project["source_lang"], target,
+            min_ratio=float(cfg.get("provider_min_ratio", 0.25)),
+            min_keys=int(cfg.get("provider_min_keys", 30)),
+            only_mod_id=self.mod_id,
+        ).get(self.mod_id, [])
+        self._provider_candidates = cands
+        if not cands:
+            self.provider_row.hide()
+            return
+        current = (self.ctx.provider["provider_mod_id"]
+                   if self.ctx.provider is not None else "")
+        self.provider_combo.blockSignals(True)
+        self.provider_combo.clear()
+        for c in cands:
+            self.provider_combo.addItem(
+                f"{c.provider_name} — {c.covered_keys} строк "
+                f"({c.ratio * 100:.0f}%, уверенность {c.confidence})",
+                c.provider_id,
+            )
+        self.provider_combo.addItem("не учитывать чужой перевод", "")
+        idx = self.provider_combo.findData(current)
+        self.provider_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self.provider_combo.blockSignals(False)
+        self.provider_row.show()
+
+    def _change_provider(self):
+        from ck3loc.core.external_translations import set_manual_choice
+
+        provider_id = self.provider_combo.currentData()
+        covered = source_keys = 0
+        for c in getattr(self, "_provider_candidates", []):
+            if c.provider_id == provider_id:
+                covered, source_keys = c.covered_keys, c.source_keys
+        set_manual_choice(
+            self.conn, self.mod_id, self.ctx.project["target_lang"],
+            provider_id or "", covered, source_keys,
+        )
+        self._log(
+            "Учитывается перевод мода: "
+            + (self.provider_combo.currentText() if provider_id
+               else "чужой перевод не учитывается")
+        )
+        self.reload()
 
     def _fill_diagnostics(self, scan):
         c = palette(self.theme)
@@ -699,30 +800,50 @@ class ModPage(QWidget):
     def do_export(self):
         from ck3loc.core.bundle import export_jsonl
         from ck3loc.core.glossary_seed import load_glossary
+        from ck3loc.core.ops import counts_by_scope
+        from ck3loc.core.xliff import export_xliff
+        from ck3loc.desktop.export_dialog import ExportScopeDialog
 
-        rows = rows_to_translate(self.ctx, "all")
-        if not rows:
+        counts = counts_by_scope(self.ctx)
+        if not any(counts.values()):
             QMessageBox.information(self, "Выгрузка",
                                     "Переводить нечего — всё актуально.")
             return
+        dlg = ExportScopeDialog(counts, parent=self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        scope, fmt = dlg.scope(), dlg.format()
+        rows = rows_to_translate(self.ctx, scope)
+        if not rows:
+            return
+        target = self.ctx.project["target_lang"]
+        ext = "xliff" if fmt == "xliff" else "jsonl"
         path, _ = QFileDialog.getSaveFileName(
             self, "Сохранить файл-задание",
-            f"{self.mod_id}_{self.ctx.project['target_lang']}.jsonl",
-            "Файл задания (*.jsonl)",
+            f"{self.mod_id}_{target}_{scope}.{ext}",
+            f"Файл задания (*.{ext})",
         )
         if not path:
             return
-        res = export_jsonl(
-            self.conn, self.ctx.project_id, rows, Path(path),
-            self.ctx.project["source_lang"], self.ctx.project["target_lang"],
-            glossary=load_glossary(self.conn, self.mod_id)[:60],
-        )
-        self._log(
-            f"Выгружено строк: {res.unit_count}\n"
-            f"  задание: {res.path}\n"
-            f"  инструкция для нейросети: {res.prompt_path}\n"
-            f"Отдайте оба файла нейросети, затем нажмите «Загрузить перевод из файла»."
-        )
+        if fmt == "xliff":
+            res = export_xliff(
+                self.conn, self.ctx.project_id, rows, Path(path),
+                self.ctx.project["source_lang"], target,
+            )
+            self._log(f"Выгружено строк: {res.unit_count}\n  файл: {res.path}")
+        else:
+            res = export_jsonl(
+                self.conn, self.ctx.project_id, rows, Path(path),
+                self.ctx.project["source_lang"], target,
+                glossary=load_glossary(self.conn, self.mod_id)[:60],
+            )
+            self._log(
+                f"Выгружено строк: {res.unit_count}\n"
+                f"  задание: {res.path}\n"
+                f"  инструкция для нейросети: {res.prompt_path}\n"
+                f"Отдайте оба файла нейросети, затем нажмите «Загрузить перевод "
+                f"из файла». Можно возвращать перевод частями."
+            )
         self.note.emit(f"«{self.ctx.scan.name}»: выгружено {res.unit_count} строк")
 
     def do_import(self):
@@ -742,6 +863,11 @@ class ModPage(QWidget):
             return
         n = apply_import_report(self.ctx, report)
         self._log(f"Принято строк: {n}, отклонено: {len(report.rejected)}")
+        if report.not_returned:
+            self._log(
+                f"   Не вернулось из задания: {report.not_returned} — "
+                f"они остались в работе, можно догрузить следующим файлом."
+            )
         for r in report.rejected[:15]:
             self._log(f"   ✗ {r.key}: {r.reason}")
         self.note.emit(
@@ -750,7 +876,10 @@ class ModPage(QWidget):
         self.reload()
 
     def do_write(self):
-        plan = build_write_plan(self.ctx.scan, self.ctx.project, self.ctx.units)
+        plan = build_write_plan(
+            self.ctx.scan, self.ctx.project, self.ctx.units,
+            has_external_provider=self.ctx.provider is not None,
+        )
         if plan.total_keys == 0:
             QMessageBox.information(
                 self, "Запись",
@@ -810,5 +939,90 @@ class ModPage(QWidget):
             self.note.emit(f"«{self.ctx.scan.name}»: перевод восстановлен")
             self.reload()
 
+    # ---------- внешние ссылки и обложка ----------
+
+    def open_mod_folder(self):
+        if self.ctx is None:
+            return
+        path = Path(self.ctx.scan.mod_dir)
+        if not path.exists():
+            QMessageBox.information(
+                self, "Папка мода",
+                "Папка мода не найдена — возможно, вы отписались от него."
+            )
+            return
+        try:
+            os.startfile(str(path))  # noqa: S606 — проводник Windows
+        except Exception:  # noqa: BLE001
+            subprocess.Popen(["explorer", str(path)])
+
+    def open_workshop(self):
+        import webbrowser
+
+        from ck3loc.core.workshop_api import workshop_page_url
+
+        if not self.mod_id.isdigit():
+            QMessageBox.information(
+                self, "Workshop",
+                "У этого мода нет номера мастерской (локальный мод)."
+            )
+            return
+        webbrowser.open(workshop_page_url(self.mod_id))
+
+    def _load_cover(self):
+        """Обложка из мастерской: берётся из кэша, скачивается один раз."""
+        from PySide6.QtGui import QPixmap
+
+        from ck3loc.core.covers import cached_cover
+
+        path = cached_cover(self.mod_id)
+        if path is None:
+            self.cover.hide()
+            self._fetch_cover_async()
+            return
+        pix = QPixmap(str(path))
+        if pix.isNull():
+            self.cover.hide()
+            return
+        self.cover.setPixmap(pix.scaled(
+            self.cover.size(),
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        ))
+        self.cover.show()
+
+    def _fetch_cover_async(self):
+        if not self.mod_id.isdigit() or not settings.get("fetch_covers"):
+            return
+        worker = _CoverWorker(self.mod_id)
+        worker.done.connect(self._on_cover_ready)
+        worker.finished.connect(lambda: self._cover_workers.discard(worker))
+        self._cover_workers.add(worker)
+        worker.start()
+
+    def _on_cover_ready(self, mod_id: str):
+        if mod_id == self.mod_id:
+            self._load_cover()
+
     def close_db(self):
+        # фоновые загрузки обложек нужно дождаться, иначе процесс падает
+        # при выходе на живом QThread
+        for worker in list(self._cover_workers):
+            if worker.isRunning():
+                worker.wait(3000)
+        self._cover_workers.clear()
         self.conn.close()
+
+
+class _CoverWorker(QThread):
+    done = Signal(str)
+
+    def __init__(self, mod_id: str):
+        super().__init__()
+        self.mod_id = mod_id
+
+    def run(self):
+        from ck3loc.core.covers import ensure_cover
+
+        if ensure_cover(self.mod_id):
+            self.done.emit(self.mod_id)

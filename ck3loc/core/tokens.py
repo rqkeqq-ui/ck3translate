@@ -186,6 +186,9 @@ def validate_translation(source: str, target: str) -> list[str]:
             f"набор тегов форматирования изменён: "
             f"{ssig['fmt_opens']} → {tsig['fmt_opens']}"
         )
-    if "\n" in target or "\r" in target:
+    # настоящий перенос строки допустим только там, где он есть в источнике
+    # (некоторые моды пишут длинные описания в несколько строк)
+    source_has_break = "\n" in source or "\r" in source
+    if not source_has_break and ("\n" in target or "\r" in target):
         errors.append("настоящий перенос строки внутри значения недопустим")
     return errors

@@ -10,7 +10,7 @@ import os
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -101,6 +101,15 @@ CREATE TABLE IF NOT EXISTS generated_outputs (
     written_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_outputs_project ON generated_outputs(project_id);
+CREATE TABLE IF NOT EXISTS translation_providers (
+    mod_id TEXT NOT NULL,              -- мод, который переводят
+    target_lang TEXT NOT NULL,
+    provider_mod_id TEXT NOT NULL,     -- мод-русификатор ('' — не учитывать)
+    covered_keys INTEGER DEFAULT 0,
+    source_keys INTEGER DEFAULT 0,
+    chosen_manually INTEGER DEFAULT 0, -- 1, если выбор сделал пользователь
+    PRIMARY KEY (mod_id, target_lang)
+);
 CREATE TABLE IF NOT EXISTS exports (
     export_id TEXT PRIMARY KEY,
     project_id INTEGER NOT NULL,

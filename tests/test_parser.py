@@ -79,6 +79,95 @@ class TestParsing(unittest.TestCase):
         self.assertEqual(loc.header_lang, "english")
 
 
+class TestMultilineValues(unittest.TestCase):
+    """Значение, занимающее несколько строк файла (реальный случай модов)."""
+
+    def test_keys_are_visible(self):
+        loc = LocFile.parse_bytes(sample("multiline_values"))
+        keys = [e.key for e in loc.entries()]
+        self.assertEqual(
+            keys,
+            ["ml_first", "after_ml", "ml_with_codes", "ml_escaped",
+             "last_normal"],
+        )
+
+    def test_value_contains_real_newlines(self):
+        loc = LocFile.parse_bytes(sample("multiline_values"))
+        value = loc.get("ml_first").value
+        self.assertIn("Line one of the story.", value)
+        self.assertIn("Third and final line.", value)
+        self.assertIn("\r\n", value)
+        # соседние однострочные записи не пострадали
+        self.assertEqual(loc.get("after_ml").value, "Normal value")
+        self.assertEqual(loc.get("last_normal").value, "Done")
+
+    def test_number_and_codes_preserved(self):
+        loc = LocFile.parse_bytes(sample("multiline_values"))
+        e = loc.get("ml_with_codes")
+        self.assertEqual(e.number, "0")
+        self.assertIn("@icon!", e.value)
+        self.assertIn("[Character.GetName]", e.value)
+
+    def test_escaped_quotes_inside_multiline(self):
+        loc = LocFile.parse_bytes(sample("multiline_values"))
+        self.assertEqual(
+            loc.get("ml_escaped").value.replace("\r\n", " "),
+            'He said "wait" and left.',
+        )
+
+    def test_edit_multiline_value(self):
+        data = sample("multiline_values")
+        loc = LocFile.parse_bytes(data)
+        loc.get("ml_first").set_value("Однострочный перевод")
+        out = loc.to_bytes()
+        loc2 = LocFile.parse_bytes(out)
+        self.assertEqual(loc2.get("ml_first").value, "Однострочный перевод")
+        self.assertEqual(loc2.get("after_ml").value, "Normal value")
+        self.assertTrue(out.startswith(BOM))
+        # многострочный перевод тоже сохраняется и читается обратно
+        loc3 = LocFile.parse_bytes(data)
+        loc3.get("ml_first").set_value("Первая строка.\r\nВторая строка.")
+        loc4 = LocFile.parse_bytes(loc3.to_bytes())
+        self.assertEqual(
+            loc4.get("ml_first").value, "Первая строка.\r\nВторая строка."
+        )
+
+    def test_unterminated_quote_does_not_swallow_file(self):
+        loc = LocFile.parse_bytes(sample("unterminated_to_eof"))
+        self.assertIsNotNone(loc.get("good_before"))
+        self.assertIsNone(loc.get("broken_key"))  # незакрытая — не запись
+        kinds = [l.kind for l in loc.lines]
+        self.assertIn(UNKNOWN, kinds)
+
+    def test_unterminated_quote_reported_as_error(self):
+        loc = LocFile.parse_bytes(sample("unterminated_to_eof"))
+        diag = [d for d in loc.diagnostics() if d.code == "unterminated_quote"]
+        self.assertEqual(len(diag), 1)
+        self.assertEqual(diag[0].severity, "error")
+        self.assertIn("broken_key", diag[0].message)
+
+    def test_broken_line_does_not_eat_next_entry(self):
+        """Незакрытая кавычка не должна поглотить следующую запись."""
+        data = (
+            b'\xef\xbb\xbfl_english:\r\n'
+            b' bad: "no closing quote\r\n'
+            b' good: "Fine"\r\n'
+        )
+        loc = LocFile.parse_bytes(data)
+        self.assertIsNone(loc.get("bad"))
+        self.assertIsNotNone(loc.get("good"))
+        self.assertEqual(loc.get("good").value, "Fine")
+        self.assertEqual(loc.to_bytes(), data)
+
+    def test_newline_allowed_in_translation_when_source_has_one(self):
+        from ck3loc.core.tokens import validate_translation
+
+        src = "First line\r\nSecond line"
+        self.assertEqual(validate_translation(src, "Первая\r\nВторая"), [])
+        # а если в источнике переноса нет — по-прежнему ошибка
+        self.assertTrue(validate_translation("One line", "Первая\nВторая"))
+
+
 class TestEditing(unittest.TestCase):
     def test_set_value_changes_only_value(self):
         data = sample("basic_crlf_bom")

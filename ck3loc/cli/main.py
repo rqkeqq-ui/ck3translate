@@ -533,7 +533,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     pe = sub.add_parser("export", help="выгрузить файл-задание для внешней LLM")
     pe.add_argument("mod_id")
-    pe.add_argument("--what", choices=["missing", "stale", "all"], default="missing")
+    pe.add_argument("--what",
+                    choices=["missing", "stale", "outdated", "all"],
+                    default="outdated",
+                    help="что выгружать (по умолчанию недостающие+устаревшие)")
     pe.add_argument("--fmt", choices=["jsonl", "xliff"], default="jsonl")
     pe.add_argument("-o", "--output", help="куда сохранить файл")
     _langs(pe)
@@ -568,7 +571,9 @@ def build_parser() -> argparse.ArgumentParser:
     pt.add_argument("mod_id")
     pt.add_argument("--provider", default="google",
                     choices=["google", "yandex", "deepl", "claude", "openai"])
-    pt.add_argument("--what", choices=["missing", "stale", "all"], default="missing")
+    pt.add_argument("--what",
+                    choices=["missing", "stale", "outdated", "all"],
+                    default="outdated")
     pt.add_argument("--estimate-only", action="store_true",
                     help="только смета, без перевода")
     _langs(pt)

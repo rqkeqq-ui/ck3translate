@@ -10,6 +10,7 @@ from pathlib import Path
 
 from .bundle import ImportReport
 from .db import connect
+from .external_translations import get_provider, provider_keys_for
 from .scanner import ModScan, scan_mod, semantic_hash
 from .status import (
     MACHINE,
@@ -32,6 +33,8 @@ class ProjectContext:
     project_id: int
     units: dict
     rows: list[RowState]
+    # мод-русификатор, покрывающий этот мод (строка translation_providers)
+    provider: object | None = None
 
     @property
     def source_values(self) -> dict[str, str]:
@@ -76,29 +79,50 @@ def load_project_context(
     units = get_units(conn, pid)
     src = scan.languages.get(source_lang)
     native = scan.languages.get(target_lang)
+    external = provider_keys_for(conn, mod_id, target_lang)
     rows = project_rows(
         {k: o.value for k, o in src.keys.items()} if src else {},
         {k: dict(v) for k, v in units.items()},
         {k: o.value for k, o in native.keys.items()} if native else {},
+        external_keys=external,
     )
-    return ProjectContext(conn, scan, project, pid, units, rows)
+    ctx = ProjectContext(conn, scan, project, pid, units, rows)
+    ctx.provider = get_provider(conn, mod_id, target_lang)
+    return ctx
 
 
-def rows_to_translate(ctx: ProjectContext, what: str = "missing") -> list[dict]:
-    """Строки для экспорта/перевода: [{key, source}].
+# наборы строк для выгрузки и перевода
+WHAT_MISSING = "missing"      # только непереведённые
+WHAT_STALE = "stale"          # только устаревшие
+WHAT_OUTDATED = "outdated"    # непереведённые + устаревшие (обычный выбор)
+WHAT_ALL = "all"              # плюс строки, переведённые самим модом
 
-    what: missing — непереведённые; stale — устаревшие; all — оба набора.
+
+def rows_to_translate(ctx: ProjectContext, what: str = WHAT_OUTDATED) -> list[dict]:
+    """Строки для выгрузки/перевода: [{key, source}].
+
+    Строки, покрытые сторонним модом-русификатором, в «недостающие»
+    не попадают — их уже переводить не нужно.
     """
-    wanted: set[str] = set()
-    if what in ("missing", "all"):
-        wanted |= {r.key for r in ctx.rows if r.status in (MISSING, NATIVE)}
-        if what == "missing":
-            # NATIVE (родной перевод есть) не включаем в «недостающие»
-            wanted -= {r.key for r in ctx.rows if r.status == NATIVE}
-    if what in ("stale", "all"):
-        wanted |= {r.key for r in ctx.rows if r.status == STALE}
+    statuses: set[str] = set()
+    if what in (WHAT_MISSING, WHAT_OUTDATED, WHAT_ALL):
+        statuses.add(MISSING)
+    if what in (WHAT_STALE, WHAT_OUTDATED, WHAT_ALL):
+        statuses.add(STALE)
+    if what == WHAT_ALL:
+        # полная переработка: берём и то, что перевёл сам автор мода
+        statuses.add(NATIVE)
+    wanted = {r.key for r in ctx.rows if r.status in statuses}
     src = ctx.source_values
     return [{"key": k, "source": src[k]} for k in sorted(wanted) if k in src]
+
+
+def counts_by_scope(ctx: ProjectContext) -> dict[str, int]:
+    """Сколько строк в каждом наборе — для сметы перед выгрузкой."""
+    return {
+        what: len(rows_to_translate(ctx, what))
+        for what in (WHAT_MISSING, WHAT_STALE, WHAT_OUTDATED, WHAT_ALL)
+    }
 
 
 def apply_import_report(

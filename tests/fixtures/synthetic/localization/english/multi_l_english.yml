@@ -1,0 +1,11 @@
+﻿l_english:
+ ml_first: "Line one of the story.
+
+Second paragraph of the same value.
+Third and final line."
+ after_ml: "Normal value"
+ ml_with_codes:0 "Intro @icon! text
+continues with [Character.GetName] here."
+ ml_escaped: "He said \"wait\"
+and left."
+ last_normal: "Done"

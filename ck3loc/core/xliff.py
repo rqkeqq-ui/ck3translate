@@ -159,9 +159,5 @@ def import_xliff(
             report.rejected.append(RejectedUnit(key, unit_id, "; ".join(errors)))
             continue
         report.accepted.append(ImportedUnit(key=key, target=target))
-    missing = set(reg) - seen
-    if missing:
-        report.fatal = (
-            f"в файле не хватает {len(missing)} строк экспорта — верните полный файл"
-        )
+    report.not_returned = len(set(reg) - seen)
     return report

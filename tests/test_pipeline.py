@@ -66,6 +66,45 @@ class PipelineTestCase(unittest.TestCase):
         self._td.cleanup()
 
 
+class TestScopes(PipelineTestCase):
+    """Объём выгрузки: недостающие ≠ вся локализация."""
+
+    def test_scopes_differ(self):
+        from ck3loc.core.locparser import build_new_file
+        from ck3loc.core.ops import (
+            WHAT_ALL,
+            WHAT_MISSING,
+            WHAT_OUTDATED,
+            counts_by_scope,
+            load_project_context,
+        )
+
+        # автор мода сам перевёл часть строк
+        native = self.mod_dir / "localization" / "russian" / "own_l_russian.yml"
+        native.write_bytes(build_new_file("russian", [("greeting", "Привет")]))
+        self.ctx = load_project_context(
+            self.conn, self.mod_dir.name, mod_dir=self.mod_dir
+        )
+
+        counts = counts_by_scope(self.ctx)
+        # авторский перевод не попадает в «недостающие», но попадает в «всё»
+        self.assertGreater(counts[WHAT_ALL], counts[WHAT_MISSING])
+        self.assertNotIn(
+            "greeting",
+            {r["key"] for r in rows_to_translate(self.ctx, WHAT_MISSING)},
+        )
+        self.assertIn(
+            "greeting", {r["key"] for r in rows_to_translate(self.ctx, WHAT_ALL)}
+        )
+        self.assertEqual(
+            counts[WHAT_OUTDATED],
+            len(rows_to_translate(self.ctx, WHAT_OUTDATED)),
+        )
+        missing_keys = {r["key"] for r in rows_to_translate(self.ctx, WHAT_MISSING)}
+        all_keys = {r["key"] for r in rows_to_translate(self.ctx, WHAT_ALL)}
+        self.assertTrue(missing_keys < all_keys)
+
+
 class TestPipeline(PipelineTestCase):
     def test_memory_then_api(self):
         rows = rows_to_translate(self.ctx, "missing")

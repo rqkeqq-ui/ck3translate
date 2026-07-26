@@ -145,7 +145,36 @@ _add(
     + b'\ttab_key: "Tab indented"\r\n',
 )
 
-# 14. Пустой файл и файл только с заголовком
+# 14. Многострочные значения: кавычка открыта на одной строке, закрыта ниже
+_add(
+    "multiline_values",
+    "localization/english/multi_l_english.yml",
+    BOM
+    + b'l_english:\r\n'
+    + b' ml_first: "Line one of the story.\r\n'
+    + b'\r\n'
+    + b'Second paragraph of the same value.\r\n'
+    + b'Third and final line."\r\n'
+    + b' after_ml: "Normal value"\r\n'
+    + b' ml_with_codes:0 "Intro @icon! text\r\n'
+    + b'continues with [Character.GetName] here."\r\n'
+    + b' ml_escaped: "He said \\"wait\\"\r\n'
+    + b'and left."\r\n'
+    + b' last_normal: "Done"\r\n',
+)
+
+# 15. Кавычка открыта и не закрыта до конца файла — не поглощать остаток
+_add(
+    "unterminated_to_eof",
+    "localization/english/unterm_l_english.yml",
+    BOM
+    + b'l_english:\r\n'
+    + b' good_before: "Fine"\r\n'
+    + b' broken_key: "Opened but never closed\r\n'
+    + b' another_line_without_quote\r\n',
+)
+
+# 16. Пустой файл и файл только с заголовком
 _add("empty_file", "localization/english/empty_l_english.yml", b"")
 _add(
     "header_only",

@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QTableWidget,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -28,6 +29,7 @@ STATUS_UI = {
     "orphan": ("Осиротело", "text_dim"),
     "extra": ("Только в цели", "text_dim"),
     "native": ("Родной перевод", "text_dim"),
+    "external": ("Переведено другим модом", "info"),
     "edited_outside": ("Правлено извне", "warn"),
 }
 
@@ -156,6 +158,23 @@ class EmptyState(QWidget):
     def set_text(self, title: str, description: str = ""):
         self.title_label.setText(title)
         self.desc_label.setText(description)
+
+
+class SortItem(QTableWidgetItem):
+    """Ячейка таблицы, которая сортируется по значению, а не по тексту:
+    числа как числа, даты как даты, «—» всегда в конце."""
+
+    def __init__(self, text: str, sort_value=None):
+        super().__init__(text)
+        self._sort = text if sort_value is None else sort_value
+
+    def __lt__(self, other):
+        if isinstance(other, SortItem):
+            try:
+                return self._sort < other._sort
+            except TypeError:
+                return str(self._sort) < str(other._sort)
+        return super().__lt__(other)
 
 
 def mono_font(size: int = 12) -> QFont:

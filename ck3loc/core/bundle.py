@@ -139,6 +139,7 @@ class ImportReport:
     accepted: list[ImportedUnit] = field(default_factory=list)
     rejected: list[RejectedUnit] = field(default_factory=list)
     fatal: str | None = None  # ошибка, блокирующая импорт целиком
+    not_returned: int = 0     # строк экспорта, которых нет в файле
 
     @property
     def ok(self) -> bool:
@@ -207,13 +208,9 @@ def import_jsonl(
     if not reg:
         report.fatal = f"экспорт {export_id} не найден в базе"
         return report
-    missing_ids = set(reg) - set(ids)
-    if missing_ids:
-        report.fatal = (
-            f"в файле не хватает {len(missing_ids)} строк экспорта "
-            f"(например {sorted(missing_ids)[:3]}) — верните полный файл"
-        )
-        return report
+    # неполный файл — не ошибка: принимаем то, что вернулось, остальное
+    # останется в работе (нейросети часто обрезают длинные ответы)
+    report.not_returned = len(set(reg) - set(ids))
 
     for obj in objs:
         unit_id = str(obj.get("id", ""))
