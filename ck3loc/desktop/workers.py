@@ -23,6 +23,10 @@ class ModRow:
     updated: str = ""
     errors: int = 0
     tracked: bool = False
+    provider_name: str = ""      # мод-русификатор, покрывающий этот мод
+    translates: int = 0          # сам является русификатором для N модов
+    source_keys: int = 0
+    updated_ts: int = 0          # для сортировки по дате обновления
 
 
 class ScanWorker(QThread):
@@ -108,7 +112,8 @@ class ScanWorker(QThread):
                 if not scan.has_localization:
                     rows.append(ModRow(scan.mod_id, scan.name, 0, None,
                                        "нет локализации", False, updated,
-                                       errors, scan.mod_id in tracked))
+                                       errors, scan.mod_id in tracked,
+                                       updated_ts=t_upd))
                     continue
                 prev = latest_snapshot(conn, scan.mod_id)
                 snap = take_snapshot(conn, scan, steam_time_updated=t_upd)
@@ -127,19 +132,76 @@ class ScanWorker(QThread):
                     state, cov = "полный", 100.0
                 rows.append(ModRow(scan.mod_id, scan.name, len(scan.languages),
                                    cov, state, True, updated, errors,
-                                   scan.mod_id in tracked))
+                                   scan.mod_id in tracked, source_keys=of,
+                                   updated_ts=t_upd))
             gone = mark_missing_mods(conn, {d.name for d in mod_dirs})
             for g in gone:
                 self.note.emit(
                     f"Мод {g} больше не установлен — перевод и история "
                     f"сохранены в базе."
                 )
+            self._detect_providers(conn, rows)
             self.finished_rows.emit(rows)
         except Exception as e:  # noqa: BLE001
             self.note.emit(f"Ошибка сканирования: {e}")
             self.finished_rows.emit([])
         finally:
             conn.close()
+
+    def _detect_providers(self, conn, rows: list[ModRow]):
+        """Найти моды-русификаторы и пересчитать покрытие модов, которые
+        они переводят."""
+        from ck3loc.core import settings
+        from ck3loc.core.external_translations import (
+            find_provider_candidates,
+            providers_index,
+            provider_roles,
+            save_candidates,
+        )
+
+        cfg = settings.load()
+        if not cfg.get("provider_detect", True):
+            return
+        self.progress.emit(0, 1, "Ищу моды-русификаторы…")
+        candidates = find_provider_candidates(
+            conn, self.source_lang, self.target_lang,
+            min_ratio=float(cfg.get("provider_min_ratio", 0.25)),
+            min_keys=int(cfg.get("provider_min_keys", 30)),
+        )
+        save_candidates(conn, self.target_lang, candidates)
+        index = providers_index(conn, self.target_lang)
+        roles = provider_roles(conn, self.target_lang)
+        if not index:
+            return
+        names = {r.mod_id: r.name for r in rows}
+        by_id = {r.mod_id: r for r in rows}
+        for mod_id, provider_id in index.items():
+            row = by_id.get(mod_id)
+            if row is None:
+                continue
+            row.provider_name = names.get(provider_id, provider_id)
+            best = candidates.get(mod_id, [])
+            covered = best[0].covered_keys if best else 0
+            total = best[0].source_keys if best else row.source_keys
+            if total:
+                row.coverage = min(100.0, 100.0 * covered / total)
+                left = max(0, total - covered)
+                row.state = ("переведён другим модом" if left == 0
+                             else f"чужой перевод, {left} пропущено")
+        for provider_id, targets in roles.items():
+            row = by_id.get(provider_id)
+            if row is not None:
+                row.translates = len(targets)
+                row.state = (
+                    f"русификатор для «{names.get(targets[0], targets[0])}»"
+                    if len(targets) == 1
+                    else f"русификатор для {len(targets)} модов"
+                )
+                row.coverage = None
+        self.note.emit(
+            f"Найдено модов-русификаторов: {len(roles)}; они покрывают "
+            f"{len(index)} модов."
+        )
 
     def _report_changes(self, conn, scan, old_id: int, new_id: int):
         from ck3loc.core.store import diff_snapshots

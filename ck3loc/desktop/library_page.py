@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QComboBox,
@@ -18,9 +18,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ck3loc.core import settings
 from ck3loc.desktop.theme import palette
 from ck3loc.desktop.widgets import (
     EmptyState,
+    SortItem,
     Tile,
     align_headers,
     setup_table,
@@ -31,10 +33,13 @@ ALL = "Все моды"
 NO_TRANSLATION = "Без перевода"
 PARTIAL = "Перевод неполный"
 FULL = "Перевод полный"
+EXTERNAL = "Переведён другим модом"
+RUSSIFIERS = "Моды-русификаторы"
 MINE = "Мои проекты"
 ERRORS = "С ошибками"
 NO_LOC = "Без локализации"
-FILTERS = [ALL, NO_TRANSLATION, PARTIAL, FULL, MINE, ERRORS, NO_LOC]
+FILTERS = [ALL, NO_TRANSLATION, PARTIAL, FULL, EXTERNAL, RUSSIFIERS,
+           MINE, ERRORS, NO_LOC]
 
 
 class LibraryPage(QWidget):
@@ -48,6 +53,7 @@ class LibraryPage(QWidget):
         self.rows: list[ModRow] = []
         self._shown: list[ModRow] = []
         self._scanned = False
+        self._cover_cache: dict = {}
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -64,6 +70,8 @@ class LibraryPage(QWidget):
                                  "Перевод есть, но отстаёт от источника")
         self.tile_full = Tile("Готово", "ok", theme,
                               "Перевод полный")
+        self.tile_external = Tile("Чужой перевод", "info", theme,
+                                  "Переведены отдельными модами-русификаторами")
         self.tile_errors = Tile("Ошибки", "warn", theme,
                                 "Моды с проблемами в файлах локализации")
         self.tiles = {
@@ -71,6 +79,7 @@ class LibraryPage(QWidget):
             NO_TRANSLATION: self.tile_none,
             PARTIAL: self.tile_partial,
             FULL: self.tile_full,
+            EXTERNAL: self.tile_external,
             ERRORS: self.tile_errors,
         }
         for name, tile in self.tiles.items():
@@ -89,6 +98,12 @@ class LibraryPage(QWidget):
         self.btn_batch = QPushButton("Перевести всё без перевода…")
         self.btn_batch.clicked.connect(self.batch.emit)
         controls.addWidget(self.btn_batch)
+        self.btn_mod_dir = QPushButton("Папка модов CK3")
+        self.btn_mod_dir.setToolTip(
+            "Открыть Documents\\Paradox Interactive\\Crusader Kings III\\mod"
+        )
+        self.btn_mod_dir.clicked.connect(self.open_mod_dir)
+        controls.addWidget(self.btn_mod_dir)
         controls.addSpacing(10)
         self.search = QLineEdit()
         self.search.setPlaceholderText("Поиск по названию или ID мода…   (Ctrl+F)")
@@ -123,6 +138,11 @@ class LibraryPage(QWidget):
         setup_table(self.table)
         self.table.doubleClicked.connect(self._open_current)
         align_headers(self.table, left_columns=(0, 4), right_columns=(1, 2, 3, 5))
+        # сортировка по любому столбцу; числа и даты сортируются как числа
+        # и даты, а не как строки (см. sort_key в refresh_table)
+        self.table.setSortingEnabled(True)
+        self.table.horizontalHeader().setSortIndicatorShown(True)
+        self.table.horizontalHeader().setSectionsClickable(True)
         self.area.addWidget(self.table)
 
         self.empty = EmptyState(
@@ -164,7 +184,14 @@ class LibraryPage(QWidget):
             sum(1 for r in with_loc
                 if r.coverage is not None and 0 < r.coverage < 100)
         )
-        self.tile_full.set_value(sum(1 for r in with_loc if r.coverage == 100.0))
+        self.tile_full.set_value(
+            sum(1 for r in with_loc if r.coverage == 100.0 and not r.provider_name)
+        )
+        russifiers = sum(1 for r in rows if r.translates)
+        self.tile_external.set_value(
+            sum(1 for r in rows if r.provider_name),
+            f"{russifiers} русификаторов" if russifiers else "",
+        )
         errors = sum(1 for r in rows if r.errors)
         self.tile_errors.set_value(errors)
         self.refresh_table()
@@ -176,11 +203,15 @@ class LibraryPage(QWidget):
 
     def _passes(self, r: ModRow, mode: str) -> bool:
         if mode == NO_TRANSLATION:
-            return r.has_loc and r.coverage == 0.0
+            return r.has_loc and r.coverage == 0.0 and not r.provider_name
         if mode == PARTIAL:
             return r.coverage is not None and 0 < r.coverage < 100
         if mode == FULL:
-            return r.coverage == 100.0
+            return r.coverage == 100.0 and not r.provider_name
+        if mode == EXTERNAL:
+            return bool(r.provider_name)
+        if mode == RUSSIFIERS:
+            return r.translates > 0
         if mode == MINE:
             return r.tracked
         if mode == ERRORS:
@@ -202,25 +233,45 @@ class LibraryPage(QWidget):
             and (not query or query in r.name.lower() or query in r.mod_id)
         ]
         self._shown = shown
+        # на время заполнения сортировку отключаем, иначе строки «уезжают»
+        # прямо во время вставки
+        was_sorting = self.table.isSortingEnabled()
+        self.table.setSortingEnabled(False)
+        show_covers = bool(settings.get("show_covers_in_list"))
+        self.table.setIconSize(QSize(56, 32) if show_covers else QSize(0, 0))
+        self.table.verticalHeader().setDefaultSectionSize(
+            38 if show_covers else 30
+        )
         self.table.setRowCount(len(shown))
         for i, r in enumerate(shown):
-            name_item = QTableWidgetItem(
-                ("★  " if r.tracked else "") + r.name
-            )
-            name_item.setToolTip(
-                f"{r.name}\nID {r.mod_id}"
-                + ("\nЗаведён проект перевода" if r.tracked else "")
-            )
+            prefix = "★  " if r.tracked else ("⇄  " if r.translates else "")
+            name_item = SortItem(prefix + r.name, r.name.lower())
+            name_item.setData(Qt.ItemDataRole.UserRole, r.mod_id)
+            if show_covers:
+                icon = self._cover_icon(r.mod_id)
+                if icon is not None:
+                    name_item.setIcon(icon)
+            tip = [r.name, f"ID {r.mod_id}"]
+            if r.tracked:
+                tip.append("Заведён проект перевода")
+            if r.provider_name:
+                tip.append(f"Переводит мод-русификатор: «{r.provider_name}»")
+            if r.translates:
+                tip.append(f"Это мод-русификатор для {r.translates} модов")
+            name_item.setToolTip("\n".join(tip))
             self.table.setItem(i, 0, name_item)
 
-            id_item = QTableWidgetItem(r.mod_id)
+            id_item = SortItem(
+                r.mod_id, int(r.mod_id) if r.mod_id.isdigit() else 0
+            )
             id_item.setForeground(QColor(c["text_dim"]))
             id_item.setTextAlignment(
                 Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
             )
             self.table.setItem(i, 1, id_item)
 
-            langs = QTableWidgetItem(str(r.n_langs) if r.has_loc else "—")
+            langs = SortItem(str(r.n_langs) if r.has_loc else "—",
+                             r.n_langs if r.has_loc else -1)
             langs.setTextAlignment(
                 Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
             )
@@ -228,8 +279,9 @@ class LibraryPage(QWidget):
                 langs.setForeground(QColor(c["text_dim"]))
             self.table.setItem(i, 2, langs)
 
-            cov = QTableWidgetItem(
-                "—" if r.coverage is None else f"{r.coverage:.0f}%"
+            cov = SortItem(
+                "—" if r.coverage is None else f"{r.coverage:.0f}%",
+                -1.0 if r.coverage is None else r.coverage,
             )
             cov.setTextAlignment(
                 Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
@@ -243,22 +295,29 @@ class LibraryPage(QWidget):
                 cov.setForeground(QColor(c["text_dim"]))
             self.table.setItem(i, 3, cov)
 
-            state = QTableWidgetItem(
-                f"{r.state} · {r.errors} ошиб." if r.errors else r.state
+            state = SortItem(
+                f"{r.state} · {r.errors} ошиб." if r.errors else r.state,
+                r.state.lower(),
             )
-            if r.errors:
+            if r.provider_name:
+                state.setForeground(QColor(c["info"]))
+                state.setToolTip(f"Переводит мод «{r.provider_name}»")
+            elif r.translates:
+                state.setForeground(QColor(c["info"]))
+            elif r.errors:
                 state.setForeground(QColor(c["warn"]))
             elif not r.has_loc:
                 state.setForeground(QColor(c["text_dim"]))
             self.table.setItem(i, 4, state)
 
-            upd = QTableWidgetItem(r.updated or "—")
+            upd = SortItem(r.updated or "—", r.updated_ts)
             upd.setForeground(QColor(c["text_dim"]))
             upd.setTextAlignment(
                 Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
             )
             self.table.setItem(i, 5, upd)
 
+        self.table.setSortingEnabled(was_sorting)
         self._update_area(shown, mode, query)
 
     def _update_area(self, shown: list, mode: str, query: str):
@@ -291,9 +350,44 @@ class LibraryPage(QWidget):
         )
 
     def _open_current(self):
-        i = self.table.currentRow()
-        if 0 <= i < len(self._shown):
-            self.open_mod.emit(self._shown[i].mod_id)
+        # после сортировки порядок строк не совпадает со списком, поэтому
+        # ID мода берём из самой ячейки
+        item = self.table.item(self.table.currentRow(), 0)
+        if item is not None:
+            mod_id = item.data(Qt.ItemDataRole.UserRole)
+            if mod_id:
+                self.open_mod.emit(str(mod_id))
+
+    def _cover_icon(self, mod_id: str):
+        """Миниатюра обложки из кэша; в сеть за ней список не ходит."""
+        from PySide6.QtGui import QIcon, QPixmap
+
+        from ck3loc.core.covers import cached_cover
+
+        if mod_id in self._cover_cache:
+            return self._cover_cache[mod_id]
+        path = cached_cover(mod_id)
+        icon = None
+        if path is not None:
+            pix = QPixmap(str(path))
+            if not pix.isNull():
+                icon = QIcon(pix)
+        self._cover_cache[mod_id] = icon
+        return icon
+
+    def open_mod_dir(self):
+        """Папка локальных модов CK3 — туда приложение кладёт патч-моды."""
+        import os
+        import subprocess
+
+        from ck3loc.core.writer import pdx_mod_dir
+
+        path = pdx_mod_dir()
+        path.mkdir(parents=True, exist_ok=True)
+        try:
+            os.startfile(str(path))  # noqa: S606 — проводник Windows
+        except Exception:  # noqa: BLE001
+            subprocess.Popen(["explorer", str(path)])
 
     def focus_search(self):
         self.search.setFocus()

@@ -201,15 +201,18 @@ class TestImportStrictness(MvpTestCase):
                 for r in report.rejected)
         )
 
-    def test_missing_lines_fatal(self):
+    def test_partial_file_accepted_with_report(self):
+        """Нейросеть вернула не все строки — принимаем что есть,
+        остальное остаётся в работе."""
         exp = self._export()
         translated = fake_llm_translate(exp.path)
         lines = translated.read_text(encoding="utf-8").splitlines()
         cut = translated.with_name("cut.jsonl")
         cut.write_text("\n".join(lines[:2]), encoding="utf-8")
         report = import_jsonl(self.conn, cut, self.current_source_values())
-        self.assertFalse(report.ok)
-        self.assertIn("не хватает", report.fatal)
+        self.assertTrue(report.ok, report.fatal)
+        self.assertEqual(len(report.accepted), 2)
+        self.assertEqual(report.not_returned, 3)
 
     def test_duplicate_ids_fatal(self):
         exp = self._export()

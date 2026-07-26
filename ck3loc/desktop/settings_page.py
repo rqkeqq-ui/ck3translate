@@ -10,6 +10,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -17,6 +18,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -86,6 +88,49 @@ class SettingsPage(QWidget):
             "обновлении, приложение восстановит из базы. Патч-мод переживает "
             "обновления, но требует места в плейсете."))
         v.addWidget(card)
+
+        # --- моды-русификаторы ---
+        prov = Card("Моды-русификаторы")
+        note_prov = QLabel(
+            "Приложение находит отдельные моды, которые переводят другие моды, "
+            "и не предлагает переводить то, что уже переведено ими. "
+            "Определяется по пересечению ключей и зависимостям мода."
+        )
+        note_prov.setProperty("role", "dim")
+        note_prov.setWordWrap(True)
+        prov.add(note_prov)
+
+        self.provider_detect = QCheckBox("Учитывать моды-русификаторы")
+        self.provider_detect.setChecked(bool(cfg.get("provider_detect", True)))
+        self.provider_detect.toggled.connect(
+            lambda val: settings.set_value("provider_detect", val)
+        )
+        prov.add(self.provider_detect)
+
+        self.min_ratio = QDoubleSpinBox()
+        self.min_ratio.setRange(0.05, 1.0)
+        self.min_ratio.setSingleStep(0.05)
+        self.min_ratio.setDecimals(2)
+        self.min_ratio.setValue(float(cfg.get("provider_min_ratio", 0.25)))
+        self.min_ratio.valueChanged.connect(
+            lambda val: settings.set_value("provider_min_ratio", float(val))
+        )
+        prov.add(field_row(
+            "Порог: доля ключей", self.min_ratio,
+            "Какую часть строк мода должен покрывать русификатор, чтобы "
+            "считаться его переводом. По умолчанию 0,25 — на реальных модах "
+            "настоящий русификатор даёт 0,9 и выше."))
+
+        self.min_keys = QSpinBox()
+        self.min_keys.setRange(5, 5000)
+        self.min_keys.setValue(int(cfg.get("provider_min_keys", 30)))
+        self.min_keys.valueChanged.connect(
+            lambda val: settings.set_value("provider_min_keys", int(val))
+        )
+        prov.add(field_row(
+            "Порог: минимум строк", self.min_keys,
+            "Ниже этого числа совпадений связь считается случайной."))
+        v.addWidget(prov)
 
         # --- провайдеры ---
         keys_card = Card("Ключи API переводчиков")
@@ -204,6 +249,22 @@ class SettingsPage(QWidget):
             lambda: self.theme_changed.emit(self.theme_box.currentData())
         )
         ui.add(field_row("Оформление", self.theme_box))
+        self.fetch_covers = QCheckBox("Загружать обложки модов из мастерской")
+        self.fetch_covers.setChecked(bool(cfg.get("fetch_covers", True)))
+        self.fetch_covers.toggled.connect(
+            lambda val: settings.set_value("fetch_covers", val)
+        )
+        ui.add(self.fetch_covers)
+        self.covers_in_list = QCheckBox("Показывать обложки в списке модов")
+        self.covers_in_list.setToolTip(
+            "Список станет нагляднее, но при первом запуске придётся "
+            "скачать обложку каждого мода"
+        )
+        self.covers_in_list.setChecked(bool(cfg.get("show_covers_in_list")))
+        self.covers_in_list.toggled.connect(
+            lambda val: settings.set_value("show_covers_in_list", val)
+        )
+        ui.add(self.covers_in_list)
         self.scan_start = QCheckBox("Сканировать библиотеку при запуске")
         self.scan_start.setChecked(bool(cfg.get("scan_on_start", True)))
         self.scan_start.toggled.connect(

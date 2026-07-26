@@ -38,6 +38,10 @@ class GuiTestCase(unittest.TestCase):
         os.environ["CK3LOC_DATA"] = str(base / "данные")
         os.environ["CK3LOC_PDX_MOD_DIR"] = str(base / "Paradox Mods")
         self.mod_dir = make_fake_mod(base / "workshop")
+        # тесты не ходят в сеть за обложками
+        from ck3loc.core import settings
+
+        settings.set_value("fetch_covers", False)
 
     def tearDown(self):
         os.environ.pop("CK3LOC_DATA", None)
@@ -127,6 +131,81 @@ class TestLibraryPage(GuiTestCase):
         self.assertIn("Ничего не найдено", page.empty.title_label.text())
         page.search.setText("")
         self.assertIs(page.area.currentWidget(), page.table)
+
+    def test_sorting_is_numeric_not_alphabetic(self):
+        from PySide6.QtCore import Qt
+
+        from ck3loc.desktop.library_page import LibraryPage
+        from ck3loc.desktop.workers import ModRow
+
+        page = LibraryPage("dark")
+        page.set_rows([
+            ModRow("100", "B mod", 2, 9.0, "s", True, "01.01.2026", 0, False,
+                   updated_ts=100),
+            ModRow("2000", "A mod", 10, 100.0, "s", True, "02.01.2026", 0,
+                   False, updated_ts=300),
+            ModRow("30", "C mod", 1, 50.0, "s", True, "03.01.2026", 0, False,
+                   updated_ts=200),
+        ])
+        # по проценту перевода: 9 < 50 < 100, а не «100» < «50» < «9»
+        page.table.sortItems(3, Qt.SortOrder.AscendingOrder)
+        self.assertEqual(
+            [page.table.item(i, 3).text() for i in range(3)],
+            ["9%", "50%", "100%"],
+        )
+        # по ID как по числу
+        page.table.sortItems(1, Qt.SortOrder.AscendingOrder)
+        self.assertEqual(
+            [page.table.item(i, 1).text() for i in range(3)],
+            ["30", "100", "2000"],
+        )
+        # по названию
+        page.table.sortItems(0, Qt.SortOrder.AscendingOrder)
+        self.assertTrue(page.table.item(0, 0).text().endswith("A mod"))
+        # по дате обновления
+        page.table.sortItems(5, Qt.SortOrder.DescendingOrder)
+        self.assertEqual(page.table.item(0, 5).text(), "02.01.2026")
+
+    def test_open_mod_uses_cell_data_after_sorting(self):
+        """После сортировки строка таблицы не совпадает с индексом списка."""
+        from PySide6.QtCore import Qt
+
+        from ck3loc.desktop.library_page import LibraryPage
+        from ck3loc.desktop.workers import ModRow
+
+        page = LibraryPage("dark")
+        page.set_rows([
+            ModRow("111", "Zeta", 1, 10.0, "s", True, "", 0, False),
+            ModRow("222", "Alpha", 1, 20.0, "s", True, "", 0, False),
+        ])
+        page.table.sortItems(0, Qt.SortOrder.AscendingOrder)
+        opened = []
+        page.open_mod.connect(opened.append)
+        page.table.setCurrentCell(0, 0)
+        page._open_current()
+        self.assertEqual(opened, ["222"])  # Alpha, а не первая в списке
+
+    def test_provider_tiles_and_filters(self):
+        from ck3loc.desktop.library_page import LibraryPage
+        from ck3loc.desktop.workers import ModRow
+
+        page = LibraryPage("dark")
+        page.set_rows([
+            ModRow("1", "Оригинал", 1, 98.0, "чужой перевод", True, "", 0,
+                   False, provider_name="Оригинал — Русификация"),
+            ModRow("2", "Оригинал — Русификация", 1, None,
+                   "русификатор для «Оригинал»", True, "", 0, False,
+                   translates=1),
+            ModRow("3", "Обычный", 1, 0.0, "нет перевода", True, "", 0, False),
+        ])
+        self.assertEqual(page.tile_external.value_label.text(), "1")
+        self.assertIn("1 русификаторов", page.tile_external.sub_label.text())
+        # мод с чужим переводом не считается «без перевода»
+        self.assertEqual(page.tile_none.value_label.text(), "1")
+        page._set_filter("Переведён другим модом")
+        self.assertEqual(page.table.rowCount(), 1)
+        page._set_filter("Моды-русификаторы")
+        self.assertEqual(page.table.rowCount(), 1)
 
     def test_active_tile_follows_filter(self):
         from ck3loc.desktop.library_page import LibraryPage

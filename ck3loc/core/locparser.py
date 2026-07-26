@@ -25,6 +25,9 @@ _HEADER_RE = re.compile(r"^\s*l_([A-Za-z0-9_\-]+):\s*(?:#.*)?$")
 # ключ: всё до двоеточия без пробелов/кавычек/решётки
 _ENTRY_START_RE = re.compile(r'^(\s*)([^\s:#"]+):(\d*)(\s*)"')
 
+# сколько строк максимум может занимать одно значение
+MAX_MULTILINE_LINES = 200
+
 
 @dataclass
 class Line:
@@ -128,9 +131,21 @@ class LocFile:
         had_bom = data.startswith(BOM)
         raw_lines = data.splitlines(keepends=True)
         lines: list[Line] = []
-        for i, raw in enumerate(raw_lines):
-            first = i == 0
-            lines.append(_parse_line(raw, first and had_bom, i + 1))
+        i = 0
+        n = len(raw_lines)
+        while i < n:
+            has_bom = i == 0 and had_bom
+            # значение может занимать несколько физических строк: кавычка
+            # открыта здесь, а закрыта ниже — такие записи встречаются
+            # в реальных модах, и игра их читает
+            merged = _try_parse_multiline(raw_lines, i, has_bom)
+            if merged is not None:
+                line, consumed = merged
+                lines.append(line)
+                i += consumed
+                continue
+            lines.append(_parse_line(raw_lines[i], has_bom, i + 1))
+            i += 1
         return cls(path=path, lines=lines, had_bom=had_bom)
 
     @classmethod
@@ -187,14 +202,28 @@ class LocFile:
         seen: dict[str, int] = {}
         for l in self.lines:
             if l.kind == UNKNOWN and l.text.strip():
-                out.append(
-                    Diagnostic(
-                        "warning",
-                        "unparsed_line",
-                        f"нераспознанная строка: {l.text.strip()[:80]}",
-                        l.lineno,
+                m = _ENTRY_START_RE.match(l.text)
+                if m and _find_closing_quote(l.text, m.end()) == -1:
+                    # частая ошибка авторов: забыта закрывающая кавычка,
+                    # игра такую строку не прочитает
+                    out.append(
+                        Diagnostic(
+                            "error",
+                            "unterminated_quote",
+                            f"не закрыта кавычка у ключа {m.group(2)} — "
+                            f"игра не прочитает эту строку",
+                            l.lineno,
+                        )
                     )
-                )
+                else:
+                    out.append(
+                        Diagnostic(
+                            "warning",
+                            "unparsed_line",
+                            f"нераспознанная строка: {l.text.strip()[:80]}",
+                            l.lineno,
+                        )
+                    )
             if l.kind == ENTRY:
                 if l.key in seen:
                     out.append(
@@ -228,6 +257,84 @@ def _split_eol(raw: bytes) -> tuple[bytes, bytes]:
     if raw.endswith(b"\r"):
         return raw[:-1], b"\r"
     return raw, b""
+
+
+def _decode_body(raw: bytes, has_bom: bool) -> tuple[str, bytes, bool]:
+    """(текст без BOM и без терминатора, терминатор, корректный ли UTF-8)."""
+    body, eol = _split_eol(raw)
+    if has_bom:
+        body = body[len(BOM) :]
+    try:
+        return body.decode("utf-8"), eol, True
+    except UnicodeDecodeError:
+        return body.decode("utf-8", errors="replace"), eol, False
+
+
+def _find_closing_quote(text: str, start: int) -> int:
+    """Индекс неэкранированной закрывающей кавычки после start (или -1)."""
+    i = start
+    while i < len(text):
+        ch = text[i]
+        if ch == "\\":
+            i += 2
+            continue
+        if ch == '"':
+            return i
+        i += 1
+    return -1
+
+
+def _try_parse_multiline(
+    raw_lines: list[bytes], index: int, has_bom: bool
+) -> tuple[Line, int] | None:
+    """Собрать запись, значение которой занимает несколько строк.
+
+    Возвращает (строка-запись, сколько физических строк поглощено)
+    или None, если здесь многострочная запись не начинается.
+    """
+    text, _eol, ok = _decode_body(raw_lines[index], has_bom)
+    if not ok:
+        return None
+    m = _ENTRY_START_RE.match(text)
+    if not m:
+        return None
+    q1 = m.end() - 1
+    if _find_closing_quote(text, q1 + 1) != -1:
+        return None  # обычная однострочная запись
+
+    # ищем строку, где значение закрывается
+    merged_text = text
+    for j in range(index + 1, min(len(raw_lines), index + MAX_MULTILINE_LINES)):
+        part, _e, part_ok = _decode_body(raw_lines[j], False)
+        if not part_ok:
+            return None
+        # наткнулись на новую запись или заголовок языка — значит, кавычка
+        # просто не закрыта, а не значение многострочное
+        if _ENTRY_START_RE.match(part) or _HEADER_RE.match(part):
+            return None
+        prev_eol = _split_eol(raw_lines[j - 1])[1].decode("ascii", "replace")
+        merged_text += prev_eol + part
+        if _find_closing_quote(merged_text, q1 + 1) != -1:
+            q2 = _find_closing_quote(merged_text, q1 + 1)
+            raw = b"".join(raw_lines[index : j + 1])
+            body_eol = _split_eol(raw_lines[j])[1]
+            return (
+                Line(
+                    raw=raw,
+                    kind=ENTRY,
+                    text=merged_text,
+                    eol=body_eol,
+                    has_bom=has_bom,
+                    decode_ok=True,
+                    lineno=index + 1,
+                    key=m.group(2),
+                    number=m.group(3),
+                    q1=q1,
+                    q2=q2,
+                ),
+                j - index + 1,
+            )
+    return None  # кавычка так и не закрылась — оставляем как есть
 
 
 def _parse_line(raw: bytes, has_bom: bool, lineno: int) -> Line:

@@ -20,6 +20,7 @@ CONFLICT = "conflict"          # изменились и источник, и п
 ORPHAN = "orphan"              # источник удалён, перевод остался
 EXTRA = "extra"                # ключ есть только в целевом языке мода
 NATIVE = "native"              # родной перевод мода, истории нет (untracked)
+EXTERNAL = "external"          # переведено сторонним модом-русификатором
 EDITED_OUTSIDE = "edited_outside"  # записанный файл правили вне приложения
 ABSENT = "absent"              # ключа нет нигде
 
@@ -44,6 +45,7 @@ def compute_row_state(
     unit: dict | None,
     native_target_value: str | None = None,
     written_target_value: str | None = None,
+    external: bool = False,
 ) -> RowState:
     """Статус одной строки.
 
@@ -85,6 +87,9 @@ def compute_row_state(
     if not unit_target:
         if native_target_value is not None:
             return _state(NATIVE)
+        if external:
+            # строку уже перевёл отдельный мод-русификатор
+            return _state(EXTERNAL)
         return _state(MISSING)
 
     # --- наш перевод есть: сверяем источник с BASE ---
@@ -113,11 +118,13 @@ def project_rows(
     units: dict[str, dict],
     native_target_keys: dict[str, str] | None = None,
     written_target_keys: dict[str, str] | None = None,
+    external_keys: set[str] | None = None,
 ) -> list[RowState]:
     """Статусы всех строк проекта: объединение ключей источника,
     базы переводов и целевого языка мода."""
     native = native_target_keys or {}
     written = written_target_keys or {}
+    external = external_keys or set()
     all_keys = sorted(set(source_keys) | set(units) | set(native))
     out = []
     for key in all_keys:
@@ -128,6 +135,7 @@ def project_rows(
                 dict(units[key]) if key in units else None,
                 native.get(key),
                 written.get(key),
+                external=key in external,
             )
         )
     return [r for r in out if r.status != ABSENT]

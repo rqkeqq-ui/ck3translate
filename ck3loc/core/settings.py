@@ -23,6 +23,13 @@ DEFAULTS: dict = {
     "openai_model": "",
     "claude_model": "",
     "yandex_folder_id": "",
+    # обнаружение модов-русификаторов
+    "provider_detect": True,
+    "provider_min_ratio": 0.25,
+    "provider_min_keys": 30,
+    "show_covers_in_list": False,
+    "fetch_covers": True,          # загружать обложки модов из мастерской
+    "ui_lang": "",                 # пусто — язык ещё не выбран (первый запуск)
 }
 
 
