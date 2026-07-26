@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+build/
+dist/
+*.spec
+tests/fixtures/real/
+.ck3loc-data/
+*.log

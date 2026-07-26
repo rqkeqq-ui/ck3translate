@@ -1,0 +1,7 @@
+﻿l_english:
+ # comment line
+
+ greeting: "Hello, world"
+ old_style:0 "Zero style"
+ numbered:15 "Fifteen"
+ trailing: "Value"  # trailing comment
