@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QButtonGroup,
     QDialog,
@@ -24,7 +25,7 @@ from ck3loc.desktop.glossary_page import GlossaryPage
 from ck3loc.desktop.library_page import LibraryPage
 from ck3loc.desktop.mod_page import ModPage
 from ck3loc.desktop.settings_page import SettingsPage
-from ck3loc.desktop.theme import palette, stylesheet
+from ck3loc.desktop.theme import make_app_icon, palette, stylesheet
 from ck3loc.desktop.workers import ScanWorker
 
 APP_TITLE = "CK3 Localization Manager"
@@ -61,6 +62,8 @@ class MainWindow(QMainWindow):
         self.resize(1280, 780)
         self.setMinimumSize(1000, 640)
 
+        self.setWindowIcon(make_app_icon(self.theme))
+
         central = QWidget()
         root = QHBoxLayout(central)
         root.setContentsMargins(0, 0, 0, 0)
@@ -70,8 +73,8 @@ class MainWindow(QMainWindow):
 
         right = QWidget()
         rv = QVBoxLayout(right)
-        rv.setContentsMargins(18, 16, 18, 12)
-        rv.setSpacing(14)
+        rv.setContentsMargins(22, 18, 22, 12)
+        rv.setSpacing(16)
 
         self.page_title = QLabel("Библиотека модов")
         self.page_title.setProperty("role", "h1")
@@ -92,6 +95,11 @@ class MainWindow(QMainWindow):
         self.settings_page.langs_changed.connect(self._langs_changed)
         for w in (self.library, self.mod_page, self.glossary, self.settings_page):
             self.stack.addWidget(w)
+        # на карточке мода общий заголовок скрыт: название показывает сама
+        # страница, иначе оно дублируется
+        self.stack.currentChanged.connect(
+            lambda i: self.page_title.setVisible(i != 1)
+        )
         rv.addWidget(self.stack, stretch=1)
         root.addWidget(right, stretch=1)
         self.setCentralWidget(central)
@@ -109,10 +117,33 @@ class MainWindow(QMainWindow):
         self.btn_notes.clicked.connect(self.show_notifications)
         status.addPermanentWidget(self.btn_notes)
 
+        self._build_shortcuts()
         self.apply_theme(self.theme)
         self.worker: ScanWorker | None = None
         if self.cfg.get("scan_on_start", True):
             QTimer.singleShot(300, self.start_scan)
+
+    def _build_shortcuts(self):
+        QShortcut(QKeySequence("F5"), self, activated=self.start_scan)
+        QShortcut(QKeySequence("Ctrl+F"), self, activated=self._focus_search)
+        QShortcut(QKeySequence("Escape"), self, activated=self._escape)
+        QShortcut(QKeySequence("Ctrl+1"), self,
+                  activated=lambda: self.go("library"))
+        QShortcut(QKeySequence("Ctrl+2"), self,
+                  activated=lambda: self.go("glossary"))
+        QShortcut(QKeySequence("Ctrl+3"), self,
+                  activated=lambda: self.go("settings"))
+
+    def _focus_search(self):
+        if self.stack.currentIndex() == 0:
+            self.library.focus_search()
+        elif self.stack.currentIndex() == 1:
+            self.mod_page.row_search.setFocus()
+            self.mod_page.row_search.selectAll()
+
+    def _escape(self):
+        if self.stack.currentIndex() == 1:
+            self.show_library()
 
     # ---------- каркас ----------
 
@@ -124,9 +155,12 @@ class MainWindow(QMainWindow):
         v.setContentsMargins(0, 18, 0, 14)
         v.setSpacing(2)
 
-        logo = QLabel("  CK3\n  Localization")
-        logo.setStyleSheet("font-size: 16px; font-weight: 700; padding: 0 14px 14px;")
+        logo = QLabel("CK3 Localization")
+        logo.setObjectName("Logo")
         v.addWidget(logo)
+        sub = QLabel("менеджер переводов модов")
+        sub.setObjectName("LogoSub")
+        v.addWidget(sub)
 
         self.nav_group = QButtonGroup(self)
         self.nav_group.setExclusive(True)
@@ -141,11 +175,11 @@ class MainWindow(QMainWindow):
         v.addStretch(1)
 
         self.hint = QLabel(
-            "  Файлы автора мода\n  не изменяются —\n  приложение только\n"
-            "  добавляет перевод."
+            "Файлы автора мода не изменяются — приложение только добавляет "
+            "перевод, и всё записанное можно восстановить из базы."
         )
-        self.hint.setProperty("role", "dim")
-        self.hint.setStyleSheet("padding: 0 12px 8px; font-size: 11px;")
+        self.hint.setObjectName("SidebarNote")
+        self.hint.setWordWrap(True)
         v.addWidget(self.hint)
         return bar
 
@@ -158,6 +192,7 @@ class MainWindow(QMainWindow):
         }
         self.stack.setCurrentIndex(index)
         self.page_title.setText(titles[key])
+        self.page_title.setVisible(True)
         for i, (_t, k) in enumerate(NAV):
             self.nav_group.button(i).setChecked(k == key)
 
@@ -168,6 +203,7 @@ class MainWindow(QMainWindow):
         self.theme = name
         settings.set_value("theme", name)
         self.setStyleSheet(stylesheet(name))
+        self.setWindowIcon(make_app_icon(name))
         self.library.apply_theme(name)
         self.mod_page.theme = name
         if self.mod_page.ctx is not None:
@@ -214,7 +250,9 @@ class MainWindow(QMainWindow):
     def open_mod(self, mod_id: str):
         if self.mod_page.load(mod_id):
             self.stack.setCurrentIndex(1)
-            self.page_title.setText("Карточка мода")
+            # заголовок мода показывает сама страница — общий скрываем,
+            # чтобы название не дублировалось
+            self.page_title.setVisible(False)
             for i in range(len(NAV)):
                 self.nav_group.button(i).setChecked(False)
 
@@ -273,10 +311,14 @@ class MainWindow(QMainWindow):
         entry = f"[{time.strftime('%H:%M')}] {text}"
         self.notifications.append(entry)
         self.btn_notes.setText(f"Уведомления ({len(self.notifications)})")
+        self.btn_notes.setStyleSheet(
+            f"color: {palette(self.theme)['accent']}; font-weight: 600;"
+        )
         self.status_label.setText(text)
 
     def show_notifications(self):
         NotificationsDialog(list(reversed(self.notifications)), self).exec()
+        self.btn_notes.setStyleSheet("")
 
     def closeEvent(self, event):
         if self.worker is not None and self.worker.isRunning():

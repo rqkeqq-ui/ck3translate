@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 
 from ck3loc.core import db
 from ck3loc.core.glossary_seed import seed_glossary
-from ck3loc.desktop.widgets import align_headers
+from ck3loc.desktop.widgets import align_headers, setup_table
 
 MODES = {
     "required": "обязательный",
@@ -84,9 +84,11 @@ class GlossaryPage(QWidget):
         h.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         h.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         h.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.verticalHeader().setVisible(False)
-        self.table.setShowGrid(False)
-        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        setup_table(self.table)
+        self.table.setEditTriggers(
+            QTableWidget.EditTrigger.DoubleClicked
+            | QTableWidget.EditTrigger.EditKeyPressed
+        )
         self.table.itemChanged.connect(self._on_edit)
         align_headers(self.table, left_columns=(0, 1, 2, 3))
         v.addWidget(self.table, stretch=1)
