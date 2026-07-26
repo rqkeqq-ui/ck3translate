@@ -8,10 +8,12 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QPushButton,
     QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -158,6 +160,88 @@ class EmptyState(QWidget):
     def set_text(self, title: str, description: str = ""):
         self.title_label.setText(title)
         self.desc_label.setText(description)
+
+
+class _KeepOpenMenu(QMenu):
+    """Меню, которое не закрывается при переключении галочек."""
+
+    def mouseReleaseEvent(self, event):
+        action = self.activeAction()
+        if action is not None and action.isEnabled() and action.isCheckable():
+            action.trigger()
+            event.accept()
+            return
+        super().mouseReleaseEvent(event)
+
+
+class MultiSelectFilter(QToolButton):
+    """Фильтр с галочками: можно отметить несколько условий сразу.
+
+    Ничего не отмечено — показываются все моды.
+    """
+
+    changed = Signal()
+
+    def __init__(self, options: list[str], all_text: str = "Все моды",
+                 parent=None):
+        super().__init__(parent)
+        self.all_text = all_text
+        self.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        self.setSizePolicy(QSizePolicy.Policy.Preferred,
+                           QSizePolicy.Policy.Fixed)
+        menu = _KeepOpenMenu(self)
+        act_all = menu.addAction("Выделить все")
+        act_all.triggered.connect(self.select_all)
+        act_none = menu.addAction("Снять все")
+        act_none.triggered.connect(self.clear_all)
+        menu.addSeparator()
+        self._actions: dict[str, object] = {}
+        for name in options:
+            action = menu.addAction(name)
+            action.setCheckable(True)
+            action.triggered.connect(self._on_toggled)
+            self._actions[name] = action
+        self.setMenu(menu)
+        self._update_text()
+
+    # --- выбор ---
+
+    def selected(self) -> list[str]:
+        return [n for n, a in self._actions.items() if a.isChecked()]
+
+    def set_selected(self, names) -> None:
+        wanted = set(names)
+        for name, action in self._actions.items():
+            action.setChecked(name in wanted)
+        self._update_text()
+        self.changed.emit()
+
+    def select_all(self) -> None:
+        self.set_selected(list(self._actions))
+
+    def clear_all(self) -> None:
+        self.set_selected([])
+
+    def _on_toggled(self) -> None:
+        self._update_text()
+        self.changed.emit()
+
+    def _update_text(self) -> None:
+        from ck3loc.core.i18n import tr, tr_format
+
+        chosen = self.selected()
+        if not chosen or len(chosen) == len(self._actions):
+            text = tr(self.all_text)
+        elif len(chosen) == 1:
+            text = tr(chosen[0])
+        else:
+            text = tr_format("Выбрано: {n}", n=len(chosen))
+        self.setText(f"{text}  ▾")
+        self.setToolTip(
+            "\n".join(tr(name) for name in chosen) if chosen
+            else tr("Фильтры не заданы — показаны все моды")
+        )
 
 
 class SortItem(QTableWidgetItem):
