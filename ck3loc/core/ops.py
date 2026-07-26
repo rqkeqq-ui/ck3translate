@@ -60,8 +60,10 @@ def load_project_context(
     source_lang: str = "english",
     target_lang: str = "russian",
     steam_path: Path | None = None,
+    mod_dir: Path | None = None,
 ) -> ProjectContext | None:
-    mod_dir = find_mod_dir(mod_id, steam_path)
+    if mod_dir is None:
+        mod_dir = find_mod_dir(mod_id, steam_path)
     if mod_dir is None:
         return None
     scan = scan_mod(mod_dir, game_languages())

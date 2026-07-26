@@ -147,6 +147,12 @@ class MainWindow(QMainWindow):
         self.btn_scan = QPushButton("Сканировать библиотеку")
         self.btn_scan.clicked.connect(self.start_scan)
         controls.addWidget(self.btn_scan)
+        btn_batch = QPushButton("Перевести все…")
+        btn_batch.clicked.connect(self.open_batch)
+        controls.addWidget(btn_batch)
+        btn_keys = QPushButton("Ключи API…")
+        btn_keys.clicked.connect(self.open_keys)
+        controls.addWidget(btn_keys)
         self.search = QLineEdit()
         self.search.setPlaceholderText("Поиск по названию или ID…")
         self.search.textChanged.connect(self.refresh_table)
@@ -267,3 +273,14 @@ class MainWindow(QMainWindow):
 
     def add_note(self, text: str):
         self.log.appendPlainText(text)
+
+    def open_keys(self):
+        from ck3loc.desktop.translate_dialog import KeysDialog
+
+        KeysDialog(parent=self).exec()
+
+    def open_batch(self):
+        from ck3loc.desktop.translate_dialog import BatchDialog
+
+        BatchDialog(parent=self).exec()
+        self.add_note("Пакетный перевод завершён — пересканируйте библиотеку.")

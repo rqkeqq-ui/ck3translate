@@ -369,6 +369,133 @@ def cmd_verify(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_key(args: argparse.Namespace) -> int:
+    from ck3loc.providers.registry import PROVIDERS, set_api_key
+
+    if args.provider not in PROVIDERS:
+        print(f"Неизвестный провайдер. Доступны: {', '.join(PROVIDERS)}")
+        return 1
+    if args.action == "set":
+        import getpass
+
+        key = getpass.getpass(f"API-ключ для {args.provider}: ")
+        if not key:
+            print("Пустой ключ — ничего не сохранено.")
+            return 1
+        set_api_key(args.provider, key)
+        print("Ключ сохранён в хранилище Windows (Credential Manager).")
+    else:
+        set_api_key(args.provider, "")
+        print("Ключ удалён.")
+    return 0
+
+
+def cmd_translate(args: argparse.Namespace) -> int:
+    from ck3loc.core import db
+    from ck3loc.core.glossary_seed import seed_glossary
+    from ck3loc.core.ops import load_project_context, rows_to_translate
+    from ck3loc.core.pipeline import build_vanilla_lookup, estimate, translate_rows
+    from ck3loc.providers.base import ProviderError
+    from ck3loc.providers.registry import make_provider
+
+    conn = db.connect()
+    seed_glossary(conn)
+    ctx = load_project_context(conn, args.mod_id, args.source, args.target)
+    if ctx is None:
+        print(f"Мод {args.mod_id} не найден.")
+        return 1
+    rows = rows_to_translate(ctx, args.what)
+    if not rows:
+        print("Переводить нечего — всё актуально.")
+        return 0
+    vl = build_vanilla_lookup(ctx.project["source_lang"],
+                              ctx.project["target_lang"])
+    est = estimate(ctx, rows, vanilla_lookup=vl)
+    print(f"Строк на перевод: {est.rows}")
+    print(f"Закроется ванилью CK3 (бесплатно): {est.covered_by_vanilla}")
+    print(f"Закроется памятью переводов (бесплатно): {est.covered_by_memory}")
+    print(f"Пойдёт в API: {est.rows - est.covered_by_vanilla - est.covered_by_memory} "
+          f"строк, ~{est.chars_to_api} символов")
+    if args.estimate_only:
+        return 0
+    try:
+        provider = make_provider(args.provider)
+    except ProviderError as e:
+        print(e)
+        return 1
+
+    def progress(done, total):
+        print(f"\r  переведено {done}/{total}", end="", flush=True)
+
+    try:
+        stats = translate_rows(ctx, rows, provider, progress_cb=progress,
+                               vanilla_lookup=vl)
+    except ProviderError as e:
+        print(f"\nОшибка провайдера: {e}")
+        return 1
+    print()
+    print(f"Готово: ваниль {stats.from_vanilla}, память {stats.from_memory}, "
+          f"API {stats.from_api}, ошибок {len(stats.failed)}")
+    for key, reason in stats.failed[:10]:
+        print(f"  {key}: {reason}")
+    print("Теперь запишите перевод: ck3loc write " + args.mod_id)
+    conn.close()
+    return 0
+
+
+def cmd_batch(args: argparse.Namespace) -> int:
+    from ck3loc.core import db
+    from ck3loc.core.glossary_seed import seed_glossary
+    from ck3loc.core.ops import load_project_context, rows_to_translate
+    from ck3loc.core.pipeline import build_vanilla_lookup, translate_rows
+    from ck3loc.core.scanner import scan_mod
+    from ck3loc.core.writer import apply_write_plan, build_write_plan
+    from ck3loc.providers.base import ProviderError
+    from ck3loc.providers.registry import make_provider
+
+    mod_dirs, langs = _resolve_mods(args.steam)
+    if not mod_dirs:
+        return 1
+    conn = db.connect()
+    seed_glossary(conn)
+    try:
+        provider = make_provider(args.provider)
+    except ProviderError as e:
+        print(e)
+        return 1
+    vl = build_vanilla_lookup(args.source, args.target)
+
+    queue = []
+    for mod_dir in mod_dirs:
+        scan = scan_mod(mod_dir, langs)
+        if not scan.has_localization:
+            continue
+        src = scan.best_source_language(args.source) or args.source
+        translated, of = scan.coverage(args.target, src)
+        if of > 0 and translated == 0:
+            queue.append(mod_dir)
+    if args.limit:
+        queue = queue[: args.limit]
+    print(f"Модов без языка {args.target}: {len(queue)}")
+    for i, mod_dir in enumerate(queue, start=1):
+        ctx = load_project_context(conn, mod_dir.name, args.source,
+                                   args.target, mod_dir=mod_dir)
+        rows = rows_to_translate(ctx, "missing")
+        print(f"[{i}/{len(queue)}] {ctx.scan.name}: {len(rows)} строк")
+        stats = translate_rows(ctx, rows, provider, vanilla_lookup=vl)
+        print(f"    ваниль {stats.from_vanilla}, память {stats.from_memory}, "
+              f"API {stats.from_api}, ошибок {len(stats.failed)}")
+        ctx = load_project_context(conn, mod_dir.name, args.source,
+                                   args.target, mod_dir=mod_dir)
+        plan = build_write_plan(ctx.scan, ctx.project, ctx.units)
+        if plan.total_keys:
+            apply_write_plan(conn, ctx.project_id, plan, ctx.scan, ctx.units)
+            print(f"    записано ключей: {plan.total_keys}")
+    print("Пакетный перевод завершён.")
+    conn.close()
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="ck3loc", description="CK3 Localization Manager")
     p.add_argument("--steam", help="путь к папке Steam (если не найдён сам)")
@@ -425,6 +552,28 @@ def build_parser() -> argparse.ArgumentParser:
     pv.add_argument("--restore", action="store_true")
     _langs(pv)
     pv.set_defaults(func=cmd_verify)
+
+    pk = sub.add_parser("key", help="сохранить/удалить API-ключ провайдера")
+    pk.add_argument("action", choices=["set", "clear"])
+    pk.add_argument("provider")
+    pk.set_defaults(func=cmd_key)
+
+    pt = sub.add_parser("translate", help="перевести мод встроенным провайдером")
+    pt.add_argument("mod_id")
+    pt.add_argument("--provider", default="google",
+                    choices=["google", "yandex", "deepl", "claude", "openai"])
+    pt.add_argument("--what", choices=["missing", "stale", "all"], default="missing")
+    pt.add_argument("--estimate-only", action="store_true",
+                    help="только смета, без перевода")
+    _langs(pt)
+    pt.set_defaults(func=cmd_translate)
+
+    pb = sub.add_parser("batch", help="перевести и записать все моды без целевого языка")
+    pb.add_argument("--provider", default="google",
+                    choices=["google", "yandex", "deepl", "claude", "openai"])
+    pb.add_argument("--limit", type=int, help="не больше N модов")
+    _langs(pb)
+    pb.set_defaults(func=cmd_batch)
     return p
 
 

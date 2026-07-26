@@ -103,6 +103,9 @@ class ModDialog(QDialog):
         b_imp = QPushButton("Импорт перевода…")
         b_imp.clicked.connect(self.do_import)
         btns.addWidget(b_imp)
+        b_api = QPushButton("Перевести через API…")
+        b_api.clicked.connect(self.do_api_translate)
+        btns.addWidget(b_api)
         b_write = QPushButton("Записать перевод")
         b_write.clicked.connect(self.do_write)
         btns.addWidget(b_write)
@@ -280,6 +283,36 @@ class ModDialog(QDialog):
         self.overview_log.appendPlainText(msg)
         self.note.emit(f"«{self.ctx.scan.name}»: импорт — принято {n}, "
                        f"отклонено {len(report.rejected)}.")
+        self.reload_ctx()
+        self.refresh()
+
+    def do_api_translate(self):
+        from ck3loc.core.pipeline import build_vanilla_lookup, estimate
+        from ck3loc.desktop.translate_dialog import TranslateDialog
+
+        rows = rows_to_translate(self.ctx, "all")
+        if not rows:
+            QMessageBox.information(
+                self, "Перевод", "Переводить нечего — всё актуально."
+            )
+            return
+        vl = build_vanilla_lookup(
+            self.ctx.project["source_lang"], self.ctx.project["target_lang"]
+        )
+        est = estimate(self.ctx, rows, vanilla_lookup=vl)
+        text = (
+            f"Строк на перевод: {est.rows}\n"
+            f"Закроется ванилью CK3 (бесплатно): {est.covered_by_vanilla}\n"
+            f"Закроется памятью переводов (бесплатно): {est.covered_by_memory}\n"
+            f"Пойдёт в API: {est.rows - est.covered_by_vanilla - est.covered_by_memory} "
+            f"строк, ~{est.chars_to_api} символов"
+        )
+        dlg = TranslateDialog(self.mod_id, text, parent=self)
+        dlg.exec()
+        if dlg.stats is not None:
+            self.note.emit(
+                f"«{self.ctx.scan.name}»: переведено {dlg.stats.translated} строк."
+            )
         self.reload_ctx()
         self.refresh()
 
