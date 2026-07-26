@@ -154,6 +154,87 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_snapshot(args: argparse.Namespace) -> int:
+    from ck3loc.core import db
+    from ck3loc.core.store import mark_missing_mods, record_mod, take_snapshot
+
+    mod_dirs, langs = _resolve_mods(args.steam)
+    if not mod_dirs:
+        return 1
+    if args.mod_id:
+        mod_dirs = [d for d in mod_dirs if d.name == args.mod_id]
+        if not mod_dirs:
+            print(f"Мод {args.mod_id} не найден.")
+            return 1
+    conn = db.connect()
+    acf = read_workshop_acf()
+    new_count = 0
+    for mod_dir in mod_dirs:
+        scan = scan_mod(mod_dir, langs)
+        entry = acf.get(scan.mod_id)
+        t_upd = int(entry.time_updated) if entry and entry.time_updated else 0
+        record_mod(conn, scan, steam_time_updated=t_upd)
+        if scan.has_localization:
+            res = take_snapshot(conn, scan, steam_time_updated=t_upd)
+            if res.is_new:
+                new_count += 1
+                print(f"  снимок: {scan.name} ({scan.mod_id})")
+    if not args.mod_id:
+        gone = mark_missing_mods(conn, {d.name for d in mod_dirs})
+        for g in gone:
+            print(f"  больше не установлен: {g} (данные сохранены)")
+    print(f"Готово: новых снимков {new_count} из {len(mod_dirs)} модов.")
+    conn.close()
+    return 0
+
+
+def cmd_changes(args: argparse.Namespace) -> int:
+    from ck3loc.core import db
+
+    conn = db.connect()
+    snaps = conn.execute(
+        "SELECT * FROM mod_snapshots WHERE mod_id=? ORDER BY id DESC LIMIT 2",
+        (args.mod_id,),
+    ).fetchall()
+    if len(snaps) == 0:
+        print("Снимков нет — сначала выполните: ck3loc snapshot")
+        return 1
+    if len(snaps) == 1:
+        print("Снимок один — изменений отслеживать не с чем. Это точка отсчёта.")
+        return 0
+    new, old = snaps[0], snaps[1]
+    from ck3loc.core.store import diff_snapshots, snapshot_language
+
+    langs = conn.execute(
+        "SELECT DISTINCT language FROM snapshot_entries WHERE snapshot_id=?",
+        (new["id"],),
+    ).fetchall()
+    print(f"Мод {args.mod_id}: снимок {old['taken_at']} → {new['taken_at']}")
+    any_change = False
+    for lr in langs:
+        lang = lr["language"]
+        diff = diff_snapshots(conn, old["id"], new["id"], lang)
+        if diff.empty:
+            continue
+        any_change = True
+        print(f"\n[{lang}] новых: {len(diff.added)}, изменённых: "
+              f"{len(diff.changed)}, удалённых: {len(diff.removed)}")
+        newvals = snapshot_language(conn, new["id"], lang)
+        oldvals = snapshot_language(conn, old["id"], lang)
+        for k in diff.added[:10]:
+            print(f"  + {k}: \"{newvals[k]['value'][:60]}\"")
+        for k in diff.changed[:10]:
+            print(f"  ~ {k}:")
+            print(f"      было:  \"{oldvals[k]['value'][:60]}\"")
+            print(f"      стало: \"{newvals[k]['value'][:60]}\"")
+        for k in diff.removed[:10]:
+            print(f"  - {k}")
+    if not any_change:
+        print("Локализация между двумя последними снимками не менялась.")
+    conn.close()
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="ck3loc", description="CK3 Localization Manager")
     p.add_argument("--steam", help="путь к папке Steam (если не найдён сам)")
@@ -170,6 +251,14 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--target", default="russian")
     pr.add_argument("--full", action="store_true", help="полные списки без сокращений")
     pr.set_defaults(func=cmd_report)
+
+    pn = sub.add_parser("snapshot", help="снять снимки локализаций (все моды или один)")
+    pn.add_argument("mod_id", nargs="?", help="ID мода (по умолчанию — вся библиотека)")
+    pn.set_defaults(func=cmd_snapshot)
+
+    pc = sub.add_parser("changes", help="что изменилось у мода с прошлого снимка")
+    pc.add_argument("mod_id")
+    pc.set_defaults(func=cmd_changes)
     return p
 
 
