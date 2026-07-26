@@ -187,7 +187,7 @@ class LibraryPage(QWidget):
                 if r.coverage is not None and 0 < r.coverage < 100)
         )
         self.tile_full.set_value(
-            sum(1 for r in with_loc if r.coverage == 100.0 and not r.provider_name)
+            sum(1 for r in with_loc if r.coverage == 100.0)
         )
         russifiers = sum(1 for r in rows if r.translates)
         self.tile_external.set_value(
@@ -205,11 +205,11 @@ class LibraryPage(QWidget):
 
     def _passes(self, r: ModRow, mode: str) -> bool:
         if mode == NO_TRANSLATION:
-            return r.has_loc and r.coverage == 0.0 and not r.provider_name
+            return r.has_loc and r.coverage == 0.0
         if mode == PARTIAL:
             return r.coverage is not None and 0 < r.coverage < 100
         if mode == FULL:
-            return r.coverage == 100.0 and not r.provider_name
+            return r.coverage == 100.0
         if mode == EXTERNAL:
             return bool(r.provider_name)
         if mode == RUSSIFIERS:
@@ -257,7 +257,11 @@ class LibraryPage(QWidget):
             if r.tracked:
                 tip.append("Заведён проект перевода")
             if r.provider_name:
-                tip.append(f"Переводит мод-русификатор: «{r.provider_name}»")
+                tip.append(
+                    f"Часть перевода даёт мод «{r.provider_name}»: "
+                    f"покрывает {r.provider_total} строк, "
+                    f"из них новых {r.provider_new}"
+                )
             if r.translates:
                 tip.append(f"Это мод-русификатор для {r.translates} модов")
             name_item.setToolTip("\n".join(tip))
@@ -303,7 +307,10 @@ class LibraryPage(QWidget):
             )
             if r.provider_name:
                 state.setForeground(QColor(c["info"]))
-                state.setToolTip(f"Переводит мод «{r.provider_name}»")
+                state.setToolTip(
+                    f"Учтён перевод из мода «{r.provider_name}» "
+                    f"(+{r.provider_new} строк)"
+                )
             elif r.translates:
                 state.setForeground(QColor(c["info"]))
             elif r.errors:

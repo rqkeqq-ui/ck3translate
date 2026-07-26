@@ -29,6 +29,8 @@ class ModRow:
     translates: int = 0          # сам является русификатором для N модов
     source_keys: int = 0
     updated_ts: int = 0          # для сортировки по дате обновления
+    provider_new: int = 0        # строк, которые добавляет русификатор
+    provider_total: int = 0      # всего покрывает русификатор
 
 
 class ScanWorker(QThread):
@@ -176,6 +178,8 @@ class ScanWorker(QThread):
         roles = provider_roles(conn, self.target_lang)
         if not index:
             return
+        from ck3loc.core.external_translations import effective_coverage
+
         names = {r.mod_id: r.name for r in rows}
         by_id = {r.mod_id: r for r in rows}
         for mod_id, provider_id in index.items():
@@ -183,16 +187,21 @@ class ScanWorker(QThread):
             if row is None:
                 continue
             row.provider_name = names.get(provider_id, provider_id)
-            best = candidates.get(mod_id, [])
-            covered = best[0].covered_keys if best else 0
-            total = best[0].source_keys if best else row.source_keys
-            if total:
-                row.coverage = min(100.0, 100.0 * covered / total)
-                left = max(0, total - covered)
-                row.state = (
-                    tr("переведён другим модом") if left == 0
-                    else tr_format("чужой перевод, {n} пропущено", n=left)
-                )
+            # покрытие считаем по объединению: свой перевод мода плюс то,
+            # что добавляет русификатор — иначе число занижается
+            cov = effective_coverage(
+                conn, mod_id, self.source_lang, self.target_lang
+            )
+            if not cov.total:
+                continue
+            row.provider_new = cov.external_new
+            row.provider_total = cov.external_total
+            row.coverage = cov.percent
+            if cov.missing == 0:
+                row.state = (tr("переведён другим модом") if cov.own == 0
+                             else tr("полный"))
+            else:
+                row.state = tr_format("{n} пропущено", n=cov.missing)
         for provider_id, targets in roles.items():
             row = by_id.get(provider_id)
             if row is not None:

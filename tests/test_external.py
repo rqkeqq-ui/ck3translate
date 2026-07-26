@@ -124,6 +124,75 @@ class TestDetection(ExternalTestCase):
         self.assertEqual(provider_keys_for(self.conn, "1000", "russian"), set())
 
 
+class TestCoverageWithOwnTranslation(unittest.TestCase):
+    """Случай Search & Trade Artifacts: у мода есть и свой перевод,
+    и мод-русификатор, который почти всё дублирует."""
+
+    def setUp(self):
+        self._td = tempfile.TemporaryDirectory()
+        base = Path(self._td.name)
+        os.environ["CK3LOC_DATA"] = str(base / "data")
+        self.conn = db.connect()
+        workshop = base / "workshop"
+        # мод: 332 английских ключа, 298 из них переведены самим автором
+        self.orig = make_mod(
+            workshop, "1000", "Search & Trade", "english",
+            [(f"k{i}", f"Text {i}") for i in range(332)],
+        )
+        native = self.orig / "localization" / "russian"
+        native.mkdir(parents=True, exist_ok=True)
+        (native / "own_l_russian.yml").write_bytes(build_new_file(
+            "russian", [(f"k{i}", f"Текст {i}") for i in range(298)]
+        ))
+        # русификатор: 242 ключа, из них только 3 новых (298..300)
+        self.rus = make_mod(
+            workshop, "2000", "Search & Trade [RUS]", "russian",
+            [(f"k{i}", f"Перевод {i}") for i in list(range(239)) + [298, 299, 300]],
+            replace=True,
+        )
+        for d in (self.orig, self.rus):
+            scan = scan_mod(d)
+            record_mod(self.conn, scan)
+            take_snapshot(self.conn, scan)
+        save_candidates(
+            self.conn, "russian",
+            find_provider_candidates(self.conn, "english", "russian"),
+        )
+
+    def tearDown(self):
+        self.conn.close()
+        os.environ.pop("CK3LOC_DATA", None)
+        self._td.cleanup()
+
+    def test_coverage_counts_own_translation_too(self):
+        from ck3loc.core.external_translations import effective_coverage
+
+        cov = effective_coverage(self.conn, "1000", "english", "russian")
+        self.assertEqual(cov.total, 332)
+        self.assertEqual(cov.own, 298)
+        self.assertEqual(cov.external_total, 242)
+        self.assertEqual(cov.external_new, 3)   # остальное дублирует своё
+        self.assertEqual(cov.translated, 301)
+        self.assertEqual(cov.missing, 31)
+        # доля русификатора сама по себе занижает картину: 242/332 = 73%
+        self.assertGreater(cov.percent, 90.0)
+
+    def test_card_and_library_agree(self):
+        """Карточка мода и строка библиотеки должны показывать одно и то же."""
+        from ck3loc.core.external_translations import effective_coverage
+
+        ctx = load_project_context(self.conn, "1000", mod_dir=self.orig)
+        translated = sum(
+            1 for r in ctx.rows
+            if r.status not in ("missing", "orphan", "extra")
+        )
+        cov = effective_coverage(self.conn, "1000", "english", "russian")
+        self.assertEqual(translated, cov.translated)
+        self.assertEqual(len(ctx.source_values), cov.total)
+        missing = sum(1 for r in ctx.rows if r.status == MISSING)
+        self.assertEqual(missing, cov.missing)
+
+
 class TestEffectOnTranslation(ExternalTestCase):
     def test_covered_keys_are_not_missing(self):
         cands = find_provider_candidates(self.conn, "english", "russian")

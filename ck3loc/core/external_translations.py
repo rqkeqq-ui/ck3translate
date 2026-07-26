@@ -276,6 +276,58 @@ def provider_keys_for(
     return _keys(conn, sid, target_lang)
 
 
+@dataclass
+class Coverage:
+    """Сколько строк мода переведено с учётом всех источников."""
+
+    total: int = 0            # ключей в исходном языке
+    own: int = 0              # перевёл сам мод
+    external_new: int = 0     # добавил мод-русификатор сверх своего перевода
+    external_total: int = 0   # всего покрывает русификатор (в т.ч. дубли)
+
+    @property
+    def translated(self) -> int:
+        return self.own + self.external_new
+
+    @property
+    def missing(self) -> int:
+        return max(0, self.total - self.translated)
+
+    @property
+    def percent(self) -> float | None:
+        return None if not self.total else 100.0 * self.translated / self.total
+
+
+def effective_coverage(
+    conn: sqlite3.Connection,
+    mod_id: str,
+    source_lang: str,
+    target_lang: str,
+) -> Coverage:
+    """Покрытие мода: свой перевод плюс то, что добавляет русификатор.
+
+    Считать только по русификатору нельзя: у мода может быть и свой
+    перевод, и тогда доля русификатора занижает картину.
+    """
+    snaps = _latest_snapshots(conn)
+    sid = snaps.get(mod_id)
+    if sid is None:
+        return Coverage()
+    src = _keys(conn, sid, source_lang)
+    if not src:
+        return Coverage()
+    own = _keys(conn, sid, target_lang) & src
+    cov = Coverage(total=len(src), own=len(own))
+    row = get_provider(conn, mod_id, target_lang)
+    if row is not None:
+        psid = snaps.get(row["provider_mod_id"])
+        if psid is not None:
+            ext = _keys(conn, psid, target_lang) & src
+            cov.external_total = len(ext)
+            cov.external_new = len(ext - own)
+    return cov
+
+
 def providers_index(
     conn: sqlite3.Connection, target_lang: str
 ) -> dict[str, str]:
