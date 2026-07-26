@@ -1,0 +1,4 @@
+* text=auto
+*.yml -text
+tests/fixtures/** -text
+*.bat text eol=crlf
