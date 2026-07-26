@@ -20,7 +20,12 @@ from PySide6.QtWidgets import (
 
 from ck3loc.core import settings
 from ck3loc.core.i18n import tr_format
-from ck3loc.desktop.coverage_bar import SEGMENTS_ROLE, CoverageDelegate, describe
+from ck3loc.desktop.coverage_bar import (
+    SEGMENTS_ROLE,
+    CoverageDelegate,
+    describe,
+    format_percent,
+)
 from ck3loc.desktop.theme import palette
 from ck3loc.desktop.widgets import (
     EmptyState,
@@ -289,10 +294,14 @@ class LibraryPage(QWidget):
                 langs.setForeground(QColor(c["text_dim"]))
             self.table.setItem(i, 2, langs)
 
-            cov = SortItem(
-                "—" if r.coverage is None else f"{r.coverage:.0f}%",
-                -1.0 if r.coverage is None else r.coverage,
-            )
+            if r.segments:
+                total = sum(n for _k, n in r.segments)
+                missing = dict(r.segments).get("missing", 0)
+                cov_text = format_percent(total - missing, total)
+            else:
+                cov_text = ("—" if r.coverage is None
+                            else format_percent(int(r.coverage), 100))
+            cov = SortItem(cov_text, -1.0 if r.coverage is None else r.coverage)
             cov.setTextAlignment(
                 Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
             )

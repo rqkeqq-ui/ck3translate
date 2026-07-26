@@ -263,10 +263,14 @@ class ScanWorker(QThread):
             row.coverage = b.percent
             row.provider_total = b.provider_total or row.provider_total
             row.provider_new = b.external or row.provider_new
+            # если основную часть перевода даёт сторонний мод, это должно быть
+            # видно в списке при любом проценте, а не только при 100%
+            external_main = b.external > b.own + b.mine
             if b.missing == 0:
-                row.state = (tr("переведён другим модом")
-                             if b.own == 0 and b.mine == 0 and b.external
+                row.state = (tr("переведён другим модом") if external_main
                              else tr("полный"))
+            elif external_main:
+                row.state = tr_format("другой мод · {n} пропущено", n=b.missing)
             else:
                 row.state = tr_format("{n} пропущено", n=b.missing)
 

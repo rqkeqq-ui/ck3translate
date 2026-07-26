@@ -221,6 +221,7 @@ T: dict[str, tuple[str, str, str, str, str, str]] = {
     "нет языка {lang}": ("no {lang} language", "sin idioma {lang}", "langue {lang} absente", "Sprache {lang} fehlt", "缺少 {lang} 语言", "{lang} 언어 없음"),
     "переведён другим модом": ("translated by another mod", "traducido por otro mod", "traduit par un autre mod", "von anderem Mod übersetzt", "由其他模组翻译", "다른 모드가 번역함"),
     "чужой перевод, {n} пропущено": ("external translation, {n} missing", "traducción externa, faltan {n}", "traduction externe, {n} manquantes", "Fremdübersetzung, {n} fehlen", "外部翻译，缺少 {n} 条", "외부 번역, {n}개 누락"),
+    "другой мод · {n} пропущено": ("another mod · {n} missing", "otro mod · faltan {n}", "autre mod · {n} manquantes", "anderer Mod · {n} fehlen", "其他模组 · 缺少 {n} 条", "다른 모드 · {n}개 누락"),
     "русификатор для «{name}»": ("translation mod for “{name}”", "mod de traducción para «{name}»", "mod de traduction pour « {name} »", "Übersetzungsmod für „{name}“", "「{name}」的翻译模组", "“{name}” 번역 모드"),
     "русификатор для {n} модов": ("translation mod for {n} mods", "mod de traducción para {n} mods", "mod de traduction pour {n} mods", "Übersetzungsmod für {n} Mods", "{n} 个模组的翻译模组", "모드 {n}개의 번역 모드"),
     "{n} русификаторов": ("{n} translation mods", "{n} mods de traducción", "{n} mods de traduction", "{n} Übersetzungsmods", "{n} 个翻译模组", "번역 모드 {n}개"),
