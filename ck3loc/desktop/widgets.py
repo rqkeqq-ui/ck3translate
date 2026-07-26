@@ -1,20 +1,23 @@
-"""Мелкие переиспользуемые элементы интерфейса."""
+"""Переиспользуемые элементы интерфейса."""
 
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QSizePolicy,
+    QTableWidget,
     QVBoxLayout,
     QWidget,
 )
 
-from ck3loc.desktop.theme import palette
+from ck3loc.desktop.theme import MONO, palette
 
-# статус строки → (подпись, цвет из палитры)
+# статус строки → (подпись, ключ цвета)
 STATUS_UI = {
     "missing": ("Не переведено", "err"),
     "machine": ("Машинный", "info"),
@@ -34,44 +37,63 @@ def status_label(status: str) -> str:
 
 
 def status_color(status: str, theme: str = "dark") -> str:
-    key = STATUS_UI.get(status, (status, "text_dim"))[1]
-    return palette(theme)[key]
+    return palette(theme)[STATUS_UI.get(status, (status, "text_dim"))[1]]
 
 
 class Tile(QFrame):
-    """Кликабельная плитка со значением и подписью."""
+    """Плитка сводки: значение, подпись и необязательная вторая строка.
+
+    Кликом фильтрует список; активная плитка подсвечивается рамкой.
+    """
 
     clicked = Signal()
 
-    def __init__(self, caption: str, value: str = "—", accent: str = "text",
-                 theme: str = "dark", parent=None):
+    def __init__(self, caption: str, accent: str = "text", theme: str = "dark",
+                 tooltip: str = "", parent=None):
         super().__init__(parent)
         self.setObjectName("Tile")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setMinimumWidth(150)
+        self.setFixedHeight(84)
+        self.setMinimumWidth(112)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        if tooltip:
+            self.setToolTip(tooltip)
         self._accent = accent
+
         v = QVBoxLayout(self)
-        v.setContentsMargins(14, 10, 14, 12)
-        v.setSpacing(2)
-        self.value_label = QLabel(value)
+        v.setContentsMargins(14, 10, 14, 10)
+        v.setSpacing(1)
+        self.value_label = QLabel("0")
         v.addWidget(self.value_label)
-        cap = QLabel(caption)
-        cap.setProperty("role", "dim")
-        cap.setWordWrap(True)
-        v.addWidget(cap)
+        self.caption_label = QLabel(caption)
+        self.caption_label.setProperty("role", "dim")
+        v.addWidget(self.caption_label)
+        self.sub_label = QLabel("")
+        self.sub_label.setProperty("role", "dim")
+        self.sub_label.setStyleSheet("font-size: 11px;")
+        self.sub_label.hide()
+        v.addWidget(self.sub_label)
+        v.addStretch(1)
         self.apply_theme(theme)
 
     def apply_theme(self, theme: str):
-        """Цвет значения задаётся инлайном, поэтому его нужно обновлять
-        при смене оформления."""
         self.value_label.setStyleSheet(
-            "font-size: 24px; font-weight: 600; background: transparent; "
+            "font-size: 25px; font-weight: 600; background: transparent; "
             f"color: {palette(theme)[self._accent]};"
         )
 
-    def set_value(self, value):
+    def set_value(self, value, sub: str = ""):
         self.value_label.setText(str(value))
+        if sub:
+            self.sub_label.setText(sub)
+            self.sub_label.show()
+        else:
+            self.sub_label.hide()
+
+    def set_active(self, active: bool):
+        self.setProperty("active", "true" if active else "false")
+        self.style().unpolish(self)
+        self.style().polish(self)
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -80,7 +102,7 @@ class Tile(QFrame):
 
 
 class Card(QFrame):
-    """Панель-карточка с заголовком."""
+    """Панель-карточка с необязательным заголовком."""
 
     def __init__(self, title: str = "", parent=None):
         super().__init__(parent)
@@ -98,6 +120,64 @@ class Card(QFrame):
 
     def add_layout(self, layout):
         self.body.addLayout(layout)
+
+    def add_divider(self):
+        line = QFrame()
+        line.setObjectName("Divider")
+        line.setFixedHeight(1)
+        self.body.addWidget(line)
+
+
+class EmptyState(QWidget):
+    """Заглушка для пустых списков: заголовок, пояснение, действие."""
+
+    def __init__(self, title: str, description: str = "", button: str = "",
+                 parent=None):
+        super().__init__(parent)
+        v = QVBoxLayout(self)
+        v.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        v.setSpacing(8)
+        self.title_label = QLabel(title)
+        self.title_label.setProperty("role", "h2")
+        self.title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        v.addWidget(self.title_label)
+        self.desc_label = QLabel(description)
+        self.desc_label.setProperty("role", "dim")
+        self.desc_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.desc_label.setWordWrap(True)
+        self.desc_label.setMaximumWidth(460)
+        v.addWidget(self.desc_label, alignment=Qt.AlignmentFlag.AlignCenter)
+        self.button = None
+        if button:
+            self.button = QPushButton(button)
+            self.button.setProperty("accent", "true")
+            v.addWidget(self.button, alignment=Qt.AlignmentFlag.AlignCenter)
+
+    def set_text(self, title: str, description: str = ""):
+        self.title_label.setText(title)
+        self.desc_label.setText(description)
+
+
+def mono_font(size: int = 12) -> QFont:
+    for family in ("Cascadia Mono", "Consolas", "Courier New"):
+        f = QFont(family, size)
+        if f.exactMatch() or family == "Courier New":
+            return f
+    return QFont("monospace", size)
+
+
+def setup_table(table: QTableWidget, row_height: int = 30,
+                alternating: bool = True) -> None:
+    """Единые настройки всех таблиц приложения."""
+    table.verticalHeader().setVisible(False)
+    table.verticalHeader().setDefaultSectionSize(row_height)
+    table.setShowGrid(False)
+    table.setAlternatingRowColors(alternating)
+    table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+    table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+    table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+    table.setWordWrap(False)
+    table.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
 
 def align_headers(table, left_columns=(), right_columns=()) -> None:
@@ -117,14 +197,18 @@ def align_headers(table, left_columns=(), right_columns=()) -> None:
 
 
 def field_row(caption: str, widget: QWidget, hint: str = "") -> QWidget:
-    """Строка «подпись — поле — пояснение» для экранов настроек."""
+    """Строка «подпись — поле — пояснение» для экрана настроек."""
     w = QWidget()
     v = QVBoxLayout(w)
     v.setContentsMargins(0, 0, 0, 0)
     v.setSpacing(3)
     row = QHBoxLayout()
+    row.setSpacing(10)
     lab = QLabel(caption)
     lab.setMinimumWidth(190)
+    lab.setAlignment(
+        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+    )
     row.addWidget(lab)
     row.addWidget(widget, stretch=1)
     v.addLayout(row)
@@ -132,6 +216,6 @@ def field_row(caption: str, widget: QWidget, hint: str = "") -> QWidget:
         h = QLabel(hint)
         h.setProperty("role", "dim")
         h.setWordWrap(True)
-        h.setContentsMargins(196, 0, 0, 0)
+        h.setContentsMargins(200, 0, 0, 0)
         v.addWidget(h)
     return w

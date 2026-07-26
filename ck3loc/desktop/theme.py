@@ -1,38 +1,47 @@
-"""Оформление приложения: палитры и таблица стилей Qt."""
+"""Оформление приложения: палитры, таблица стилей Qt, иконка.
+
+Шкала отступов: 6 / 10 / 16 / 22. Скругления: 6 (элементы), 10 (карточки).
+"""
 
 from __future__ import annotations
 
 DARK = {
-    "bg": "#1b1d22",
-    "panel": "#23262d",
-    "panel2": "#2b2f37",
-    "border": "#343943",
-    "text": "#e8e9ec",
-    "text_dim": "#9aa0ab",
-    "accent": "#c9a24d",
-    "accent_dim": "#8c6f34",
-    "ok": "#5aa469",
-    "warn": "#c9903f",
-    "err": "#c26060",
-    "info": "#5a86a4",
-    "sel": "#33507a",
+    "bg": "#15171c",
+    "panel": "#1d2027",
+    "panel2": "#252932",
+    "panel3": "#2d323c",
+    "border": "#2e333d",
+    "text": "#e9ebef",
+    "text_dim": "#8d95a3",
+    "accent": "#d4a94f",
+    "accent_dim": "#a8842f",
+    "accent_text": "#17191e",
+    "ok": "#61ab72",
+    "warn": "#d09a45",
+    "err": "#cd6a6a",
+    "info": "#5e93b5",
+    "sel": "#304a6e",
 }
 
 LIGHT = {
-    "bg": "#f3f4f6",
+    "bg": "#f4f5f7",
     "panel": "#ffffff",
-    "panel2": "#f7f8fa",
-    "border": "#d8dbe0",
-    "text": "#1d2026",
-    "text_dim": "#5f6672",
-    "accent": "#8a6a1f",
+    "panel2": "#eef0f4",
+    "panel3": "#e3e7ed",
+    "border": "#d9dde4",
+    "text": "#1b1e24",
+    "text_dim": "#616a78",
+    "accent": "#9c7526",
     "accent_dim": "#c9a24d",
+    "accent_text": "#ffffff",
     "ok": "#2f7a41",
-    "warn": "#9a6b16",
+    "warn": "#96661a",
     "err": "#a33b3b",
     "info": "#2f6183",
-    "sel": "#cfe0f5",
+    "sel": "#d3e2f5",
 }
+
+MONO = "'Cascadia Mono', 'Consolas', monospace"
 
 
 def palette(name: str) -> dict:
@@ -51,14 +60,22 @@ def stylesheet(name: str = "dark") -> str:
     /* надписи и флажки не рисуют свой фон — иначе на карточках
        появляются тёмные прямоугольники поверх панели */
     QLabel, QCheckBox {{ background: transparent; }}
-    QLabel[role="h1"] {{ font-size: 20px; font-weight: 600; }}
-    QLabel[role="h2"] {{ font-size: 15px; font-weight: 600; }}
+    QLabel[role="h1"] {{ font-size: 21px; font-weight: 600; }}
+    QLabel[role="h2"] {{ font-size: 14px; font-weight: 600; }}
     QLabel[role="dim"] {{ color: {c['text_dim']}; }}
+    QLabel[role="mono"] {{ font-family: {MONO}; font-size: 12px; }}
 
     /* боковая навигация */
     QFrame#Sidebar {{
         background: {c['panel']};
         border-right: 1px solid {c['border']};
+    }}
+    QLabel#Logo {{
+        font-size: 15px; font-weight: 700; padding: 0 16px;
+        color: {c['text']};
+    }}
+    QLabel#LogoSub {{
+        font-size: 11px; padding: 0 16px 16px; color: {c['text_dim']};
     }}
     QPushButton#NavButton {{
         background: transparent;
@@ -76,19 +93,30 @@ def stylesheet(name: str = "dark") -> str:
         color: {c['text']};
         font-weight: 600;
     }}
+    QLabel#SidebarNote {{
+        color: {c['text_dim']};
+        font-size: 11px;
+        padding: 12px 16px 0;
+        border-top: 1px solid {c['border']};
+    }}
 
-    /* карточки-плитки */
+    /* карточки и плитки */
     QFrame#Tile {{
         background: {c['panel']};
         border: 1px solid {c['border']};
-        border-radius: 8px;
+        border-radius: 10px;
     }}
     QFrame#Tile:hover {{ border: 1px solid {c['accent_dim']}; }}
+    QFrame#Tile[active="true"] {{
+        border: 1px solid {c['accent']};
+        background: {c['panel2']};
+    }}
     QFrame#Card {{
         background: {c['panel']};
         border: 1px solid {c['border']};
-        border-radius: 8px;
+        border-radius: 10px;
     }}
+    QFrame#Divider {{ background: {c['border']}; max-height: 1px; border: none; }}
 
     /* кнопки */
     QPushButton {{
@@ -96,67 +124,91 @@ def stylesheet(name: str = "dark") -> str:
         border: 1px solid {c['border']};
         border-radius: 6px;
         padding: 7px 14px;
+        min-height: 18px;
     }}
-    QPushButton:hover {{ border-color: {c['accent_dim']}; }}
+    QPushButton:hover {{ background: {c['panel3']}; border-color: {c['accent_dim']}; }}
     QPushButton:pressed {{ background: {c['panel']}; }}
-    QPushButton:disabled {{ color: {c['text_dim']}; border-color: {c['border']}; }}
+    QPushButton:disabled {{ color: {c['text_dim']}; background: {c['panel']}; }}
     QPushButton[accent="true"] {{
         background: {c['accent']};
         border: 1px solid {c['accent']};
-        color: #16181c;
+        color: {c['accent_text']};
         font-weight: 600;
     }}
-    QPushButton[accent="true"]:hover {{ background: {c['accent_dim']}; }}
-    QPushButton[accent="true"]:disabled {{ background: {c['panel2']}; color: {c['text_dim']}; }}
+    QPushButton[accent="true"]:hover {{
+        background: {c['accent_dim']}; border-color: {c['accent_dim']};
+    }}
+    QPushButton[accent="true"]:disabled {{
+        background: {c['panel2']}; border-color: {c['border']};
+        color: {c['text_dim']};
+    }}
+    QPushButton#LinkButton {{
+        background: transparent; border: none; color: {c['text_dim']};
+        padding: 4px 8px; text-align: left;
+    }}
+    QPushButton#LinkButton:hover {{ color: {c['text']}; }}
 
     /* поля ввода */
     QLineEdit, QComboBox, QPlainTextEdit, QTextEdit, QSpinBox {{
         background: {c['panel']};
         border: 1px solid {c['border']};
         border-radius: 6px;
-        padding: 6px 8px;
+        padding: 6px 9px;
         selection-background-color: {c['sel']};
+        selection-color: {c['text']};
     }}
     QLineEdit:focus, QComboBox:focus, QPlainTextEdit:focus, QTextEdit:focus {{
         border-color: {c['accent_dim']};
     }}
-    QComboBox::drop-down {{ border: none; width: 18px; }}
+    QLineEdit:disabled, QComboBox:disabled {{ color: {c['text_dim']}; }}
+    QComboBox::drop-down {{ border: none; width: 20px; }}
     QComboBox QAbstractItemView {{
         background: {c['panel']};
         border: 1px solid {c['border']};
         selection-background-color: {c['sel']};
+        outline: none;
+        padding: 4px;
     }}
 
     /* таблицы */
     QTableWidget, QTableView {{
         background: {c['panel']};
+        alternate-background-color: {c['panel2']};
         border: 1px solid {c['border']};
-        border-radius: 8px;
-        gridline-color: {c['border']};
+        border-radius: 10px;
+        gridline-color: transparent;
         selection-background-color: {c['sel']};
         selection-color: {c['text']};
+        outline: none;
     }}
+    QHeaderView {{ background: transparent; }}
     QHeaderView::section {{
         background: {c['panel2']};
         border: none;
         border-bottom: 1px solid {c['border']};
-        padding: 8px 6px;
+        padding: 9px 8px;
         font-weight: 600;
+        font-size: 12px;
         color: {c['text_dim']};
     }}
-    QTableWidget::item {{ padding: 4px 6px; }}
+    QHeaderView::section:first {{ border-top-left-radius: 10px; }}
+    QHeaderView::section:last {{ border-top-right-radius: 10px; }}
+    QTableWidget::item {{ padding: 6px 8px; border: none; }}
+    QTableCornerButton::section {{ background: {c['panel2']}; border: none; }}
 
     /* вкладки */
     QTabWidget::pane {{
         border: 1px solid {c['border']};
-        border-radius: 8px;
+        border-radius: 10px;
         background: {c['panel']};
         top: -1px;
     }}
+    QTabBar {{ background: transparent; }}
     QTabBar::tab {{
         background: transparent;
         color: {c['text_dim']};
-        padding: 8px 16px;
+        padding: 9px 18px;
+        margin-right: 2px;
         border-bottom: 2px solid transparent;
     }}
     QTabBar::tab:selected {{
@@ -164,37 +216,97 @@ def stylesheet(name: str = "dark") -> str:
         border-bottom: 2px solid {c['accent']};
         font-weight: 600;
     }}
-    QTabBar::tab:hover {{ color: {c['text']}; }}
+    QTabBar::tab:hover:!selected {{ color: {c['text']}; }}
 
-    /* прочее */
+    /* прогресс */
     QProgressBar {{
         background: {c['panel2']};
         border: 1px solid {c['border']};
         border-radius: 6px;
-        height: 16px;
+        height: 14px;
         text-align: center;
+        font-size: 11px;
         color: {c['text_dim']};
     }}
     QProgressBar::chunk {{ background: {c['accent']}; border-radius: 5px; }}
-    QScrollBar:vertical {{ background: transparent; width: 10px; margin: 2px; }}
+    QProgressBar#Coverage {{ height: 8px; border: none; background: {c['panel3']}; }}
+    QProgressBar#Coverage::chunk {{ background: {c['ok']}; border-radius: 4px; }}
+
+    /* полосы прокрутки */
+    QScrollBar:vertical {{ background: transparent; width: 11px; margin: 3px; }}
     QScrollBar::handle:vertical {{
-        background: {c['border']}; border-radius: 5px; min-height: 30px;
+        background: {c['border']}; border-radius: 5px; min-height: 32px;
     }}
     QScrollBar::handle:vertical:hover {{ background: {c['text_dim']}; }}
-    QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}
-    QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 2px; }}
+    QScrollBar:horizontal {{ background: transparent; height: 11px; margin: 3px; }}
     QScrollBar::handle:horizontal {{
-        background: {c['border']}; border-radius: 5px; min-width: 30px;
+        background: {c['border']}; border-radius: 5px; min-width: 32px;
     }}
-    QSplitter::handle {{ background: {c['border']}; }}
-    QStatusBar {{ background: {c['panel']}; border-top: 1px solid {c['border']}; }}
+    QScrollBar::handle:horizontal:hover {{ background: {c['text_dim']}; }}
+    QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; width: 0; }}
+    QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
+    QScrollArea {{ border: none; background: transparent; }}
+
+    /* прочее */
+    QSplitter::handle {{ background: {c['border']}; height: 1px; }}
+    QStatusBar {{
+        background: {c['panel']};
+        border-top: 1px solid {c['border']};
+        color: {c['text_dim']};
+    }}
+    QStatusBar::item {{ border: none; }}
     QToolTip {{
-        background: {c['panel2']}; color: {c['text']};
-        border: 1px solid {c['border']}; padding: 5px;
+        background: {c['panel3']}; color: {c['text']};
+        border: 1px solid {c['border']}; padding: 6px 8px; border-radius: 6px;
     }}
     QCheckBox::indicator {{
-        width: 15px; height: 15px; border-radius: 4px;
+        width: 16px; height: 16px; border-radius: 4px;
         border: 1px solid {c['border']}; background: {c['panel']};
     }}
-    QCheckBox::indicator:checked {{ background: {c['accent']}; border-color: {c['accent']}; }}
+    QCheckBox::indicator:checked {{
+        background: {c['accent']}; border-color: {c['accent']};
+    }}
+    QMessageBox, QDialog {{ background: {c['bg']}; }}
+    QMessageBox QLabel {{ color: {c['text']}; }}
     """
+
+
+def make_app_icon(theme: str = "dark"):
+    """Иконка приложения: золотой щит с буквами CK."""
+    from PySide6.QtCore import QRectF, Qt
+    from PySide6.QtGui import (
+        QBrush,
+        QColor,
+        QFont,
+        QIcon,
+        QPainter,
+        QPainterPath,
+        QPixmap,
+    )
+
+    c = palette(theme)
+    icon = QIcon()
+    for size in (16, 32, 64, 256):
+        pix = QPixmap(size, size)
+        pix.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pix)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        s = size
+        path = QPainterPath()
+        m = s * 0.08
+        path.moveTo(m, m)
+        path.lineTo(s - m, m)
+        path.lineTo(s - m, s * 0.58)
+        path.quadTo(s - m, s - m, s / 2, s - m)
+        path.quadTo(m, s - m, m, s * 0.58)
+        path.closeSubpath()
+        p.fillPath(path, QBrush(QColor(c["accent"])))
+        if s >= 32:
+            p.setPen(QColor(c["accent_text"]))
+            f = QFont("Segoe UI", int(s * 0.34), QFont.Weight.Bold)
+            p.setFont(f)
+            p.drawText(QRectF(0, 0, s, s * 0.92),
+                       Qt.AlignmentFlag.AlignCenter, "CK")
+        p.end()
+        icon.addPixmap(pix)
+    return icon

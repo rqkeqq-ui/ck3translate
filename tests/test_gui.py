@@ -79,7 +79,8 @@ class TestLibraryPage(GuiTestCase):
         page = LibraryPage("dark")
         page.set_rows(self._rows())
         self.assertEqual(page.tile_total.value_label.text(), "4")
-        self.assertEqual(page.tile_noloc.value_label.text(), "1")
+        # моды без локализации показаны второй строкой плитки «Всего»
+        self.assertIn("1 без локализации", page.tile_total.sub_label.text())
         self.assertEqual(page.tile_none.value_label.text(), "1")
         self.assertEqual(page.tile_partial.value_label.text(), "1")
         self.assertEqual(page.tile_full.value_label.text(), "1")
@@ -106,6 +107,36 @@ class TestLibraryPage(GuiTestCase):
         page.search.setText("")
         self.assertEqual(page.table.rowCount(), 4)
 
+    def test_empty_states(self):
+        """Пустой список объясняет, что делать, а не показывает пустоту."""
+        from ck3loc.desktop.library_page import LibraryPage
+
+        page = LibraryPage("dark")
+        # до сканирования — приглашение с кнопкой
+        self.assertIs(page.area.currentWidget(), page.empty)
+        self.assertIn("не просканирована", page.empty.title_label.text())
+        self.assertTrue(page.empty.button.isVisible()
+                        or page.empty.button is not None)
+
+        page.set_rows(self._rows())
+        self.assertIs(page.area.currentWidget(), page.table)
+
+        # фильтр без результатов — объяснение без кнопки
+        page.search.setText("такого мода нет")
+        self.assertIs(page.area.currentWidget(), page.empty)
+        self.assertIn("Ничего не найдено", page.empty.title_label.text())
+        page.search.setText("")
+        self.assertIs(page.area.currentWidget(), page.table)
+
+    def test_active_tile_follows_filter(self):
+        from ck3loc.desktop.library_page import LibraryPage
+
+        page = LibraryPage("dark")
+        page.set_rows(self._rows())
+        page._set_filter("Без перевода")
+        self.assertEqual(page.tile_none.property("active"), "true")
+        self.assertEqual(page.tile_total.property("active"), "false")
+
     def test_theme_switch_updates_tiles(self):
         from ck3loc.desktop.library_page import LibraryPage
         from ck3loc.desktop.theme import palette
@@ -131,6 +162,20 @@ class TestModPage(GuiTestCase):
         self.assertGreater(page.rows_table.rowCount(), 10)
         self.assertIn("Строки", page.tabs.tabText(1))
         self.assertIn("english", page.info.text())
+        # шкала покрытия заполнена и подписана
+        self.assertTrue(page.coverage_value.text().endswith("%"))
+        self.assertIn("english", page.coverage_caption.text())
+        page.close_db()
+
+    def test_diagnostics_table(self):
+        """Диагностика — таблица со строками, а не простыня текста."""
+        page = self._page()
+        self.assertGreater(page.diag_table.rowCount(), 0)
+        self.assertIs(page.diag_area.currentWidget(), page.diag_table)
+        levels = {page.diag_table.item(i, 0).text()
+                  for i in range(page.diag_table.rowCount())}
+        self.assertTrue(levels <= {"ошибка", "предупреждение"}, levels)
+        self.assertIn("Диагностика (", page.tabs.tabText(3))
         page.close_db()
 
     def test_row_filters(self):

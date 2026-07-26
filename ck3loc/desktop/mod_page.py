@@ -15,8 +15,10 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPlainTextEdit,
+    QProgressBar,
     QPushButton,
     QSplitter,
+    QStackedWidget,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -35,7 +37,15 @@ from ck3loc.core.tokens import validate_translation
 from ck3loc.core.writer import apply_write_plan, build_write_plan, verify_outputs
 from ck3loc.core.xliff import import_xliff
 from ck3loc.desktop.theme import palette
-from ck3loc.desktop.widgets import Card, align_headers, status_color, status_label
+from ck3loc.desktop.widgets import (
+    Card,
+    EmptyState,
+    align_headers,
+    mono_font,
+    setup_table,
+    status_color,
+    status_label,
+)
 
 ROW_FILTERS = {
     "Все строки": None,
@@ -88,10 +98,34 @@ class ModPage(QWidget):
     def _build_overview(self) -> QWidget:
         w = QWidget()
         v = QVBoxLayout(w)
-        v.setContentsMargins(12, 12, 12, 12)
+        v.setContentsMargins(14, 14, 14, 14)
         v.setSpacing(12)
 
-        self.info_card = Card("Сведения о моде")
+        # карточка состояния перевода
+        self.info_card = Card()
+        cov_row = QHBoxLayout()
+        cov_row.setSpacing(12)
+        self.coverage_value = QLabel("—")
+        self.coverage_value.setStyleSheet("font-size: 28px; font-weight: 600;")
+        cov_row.addWidget(self.coverage_value)
+        cov_col = QVBoxLayout()
+        cov_col.setSpacing(4)
+        self.coverage_caption = QLabel("покрытие перевода")
+        self.coverage_caption.setProperty("role", "dim")
+        cov_col.addWidget(self.coverage_caption)
+        self.coverage_bar = QProgressBar()
+        self.coverage_bar.setObjectName("Coverage")
+        self.coverage_bar.setTextVisible(False)
+        self.coverage_bar.setMaximum(100)
+        cov_col.addWidget(self.coverage_bar)
+        cov_row.addLayout(cov_col, stretch=1)
+        self.info_card.add_layout(cov_row)
+
+        self.status_chips = QLabel()
+        self.status_chips.setWordWrap(True)
+        self.info_card.add(self.status_chips)
+        self.info_card.add_divider()
+
         self.info = QLabel()
         self.info.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
@@ -100,45 +134,72 @@ class ModPage(QWidget):
         self.info_card.add(self.info)
         v.addWidget(self.info_card)
 
-        actions = Card("Действия")
+        # действия: перевод
+        actions = Card("Перевод")
         row1 = QHBoxLayout()
+        row1.setSpacing(8)
         self.btn_api = QPushButton("Перевести через API…")
         self.btn_api.setProperty("accent", "true")
+        self.btn_api.setToolTip(
+            "Google, Yandex, DeepL или нейросеть по ключу API.\n"
+            "Перед запуском покажет смету."
+        )
         self.btn_api.clicked.connect(
             lambda: self.request_translate.emit(self.mod_id)
         )
         row1.addWidget(self.btn_api)
         b_exp = QPushButton("Выгрузить задание для нейросети…")
+        b_exp.setToolTip(
+            "Бесплатный путь: файл-задание + инструкция для любого чат-бота"
+        )
         b_exp.clicked.connect(self.do_export)
         row1.addWidget(b_exp)
         b_imp = QPushButton("Загрузить перевод из файла…")
+        b_imp.setToolTip("Принять переведённый файл с проверкой каждой строки")
         b_imp.clicked.connect(self.do_import)
         row1.addWidget(b_imp)
         row1.addStretch(1)
         actions.add_layout(row1)
+        v.addWidget(actions)
 
+        # действия: запись
+        write_card = Card("Запись в игру")
         row2 = QHBoxLayout()
+        row2.setSpacing(8)
         self.btn_write = QPushButton("Записать перевод в игру")
         self.btn_write.setProperty("accent", "true")
+        self.btn_write.setToolTip(
+            "Создаёт файлы локализации. Файлы автора мода не изменяются."
+        )
         self.btn_write.clicked.connect(self.do_write)
         row2.addWidget(self.btn_write)
         b_ver = QPushButton("Проверить и восстановить")
+        b_ver.setToolTip(
+            "Проверяет, на месте ли записанные файлы, и возвращает их из базы"
+        )
         b_ver.clicked.connect(self.do_verify)
         row2.addWidget(b_ver)
-        row2.addSpacing(16)
-        row2.addWidget(QLabel("Куда писать:"))
+        row2.addSpacing(14)
+        lab = QLabel("Куда писать:")
+        lab.setProperty("role", "dim")
+        row2.addWidget(lab)
         self.write_mode = QComboBox()
         self.write_mode.addItem("Внутрь мода", "in_mod")
         self.write_mode.addItem("Отдельный патч-мод", "patch_mod")
+        self.write_mode.setMinimumWidth(180)
         self.write_mode.currentIndexChanged.connect(self._change_write_mode)
         row2.addWidget(self.write_mode)
         row2.addStretch(1)
-        actions.add_layout(row2)
-        v.addWidget(actions)
+        write_card.add_layout(row2)
+        v.addWidget(write_card)
 
         log_card = Card("Журнал действий")
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
+        self.log.setPlaceholderText(
+            "Здесь появятся сообщения о выгрузке, загрузке, переводе и записи."
+        )
+        self.log.setFont(mono_font(11))
         log_card.add(self.log, stretch=1)
         v.addWidget(log_card, stretch=1)
         return w
@@ -178,24 +239,26 @@ class ModPage(QWidget):
         h.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
         h.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         h.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        self.rows_table.setColumnWidth(1, 230)
-        self.rows_table.verticalHeader().setVisible(False)
-        self.rows_table.setShowGrid(False)
-        self.rows_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.rows_table.setSelectionBehavior(
-            QTableWidget.SelectionBehavior.SelectRows
-        )
+        self.rows_table.setColumnWidth(0, 150)
+        self.rows_table.setColumnWidth(1, 250)
+        setup_table(self.rows_table, row_height=28)
         self.rows_table.itemSelectionChanged.connect(self._load_editor)
         align_headers(self.rows_table, left_columns=(0, 1, 2, 3))
         splitter.addWidget(self.rows_table)
 
         editor = QWidget()
         ev = QVBoxLayout(editor)
-        ev.setContentsMargins(0, 8, 0, 0)
+        ev.setContentsMargins(0, 10, 0, 0)
         ev.setSpacing(6)
+        key_row = QHBoxLayout()
         self.editor_key = QLabel("Выберите строку в таблице")
         self.editor_key.setProperty("role", "h2")
-        ev.addWidget(self.editor_key)
+        key_row.addWidget(self.editor_key)
+        self.editor_status = QLabel()
+        self.editor_status.setProperty("role", "dim")
+        key_row.addWidget(self.editor_status)
+        key_row.addStretch(1)
+        ev.addLayout(key_row)
 
         cols = QHBoxLayout()
         cols.setSpacing(10)
@@ -207,16 +270,30 @@ class ModPage(QWidget):
         ev.addLayout(cols, stretch=1)
 
         bottom = QHBoxLayout()
+        self.btn_copy_source = QPushButton("Вставить оригинал")
+        self.btn_copy_source.setObjectName("LinkButton")
+        self.btn_copy_source.setToolTip(
+            "Скопировать исходный текст в поле перевода — удобно, когда строка "
+            "состоит в основном из игровых кодов"
+        )
+        self.btn_copy_source.setEnabled(False)
+        self.btn_copy_source.clicked.connect(self._copy_source)
+        bottom.addWidget(self.btn_copy_source)
         self.token_state = QLabel()
         bottom.addWidget(self.token_state, stretch=1)
-        self.btn_save = QPushButton("Сохранить как проверенный")
-        self.btn_save.setProperty("accent", "true")
+        self.btn_save = QPushButton("Сохранить")
+        self.btn_save.setToolTip("Пометить строку как проверенную человеком")
         self.btn_save.clicked.connect(self.save_current_row)
         self.btn_save.setEnabled(False)
         bottom.addWidget(self.btn_save)
-        b_next = QPushButton("Сохранить и следующая  (Ctrl+Enter)")
-        b_next.clicked.connect(lambda: self.save_current_row(next_row=True))
-        bottom.addWidget(b_next)
+        self.btn_save_next = QPushButton("Сохранить и следующая")
+        self.btn_save_next.setProperty("accent", "true")
+        self.btn_save_next.setToolTip("Ctrl+Enter")
+        self.btn_save_next.setEnabled(False)
+        self.btn_save_next.clicked.connect(
+            lambda: self.save_current_row(next_row=True)
+        )
+        bottom.addWidget(self.btn_save_next)
         ev.addLayout(bottom)
         splitter.addWidget(editor)
         splitter.setStretchFactor(0, 3)
@@ -239,6 +316,7 @@ class ModPage(QWidget):
         text.setReadOnly(not editable)
         text.setMinimumHeight(90)
         if editable:
+            text.setPlaceholderText("Введите перевод…")
             text.textChanged.connect(self._validate_editor)
         v.addWidget(text, stretch=1)
         return {"box": box, "text": text, "label": lab}
@@ -248,19 +326,57 @@ class ModPage(QWidget):
     def _build_changes(self) -> QWidget:
         w = QWidget()
         v = QVBoxLayout(w)
-        v.setContentsMargins(12, 12, 12, 12)
+        v.setContentsMargins(14, 14, 14, 14)
+        v.setSpacing(10)
+        hint = QLabel(
+            "История правок автора мода между снимками: "
+            "+ новые строки, ~ изменённые, − удалённые."
+        )
+        hint.setProperty("role", "dim")
+        hint.setWordWrap(True)
+        v.addWidget(hint)
         self.changes = QPlainTextEdit()
         self.changes.setReadOnly(True)
-        v.addWidget(self.changes)
+        self.changes.setFont(mono_font(11))
+        v.addWidget(self.changes, stretch=1)
         return w
 
     def _build_diag(self) -> QWidget:
         w = QWidget()
         v = QVBoxLayout(w)
-        v.setContentsMargins(12, 12, 12, 12)
-        self.diag = QPlainTextEdit()
-        self.diag.setReadOnly(True)
-        v.addWidget(self.diag)
+        v.setContentsMargins(14, 14, 14, 14)
+        v.setSpacing(10)
+        hint = QLabel(
+            "Проблемы в файлах самого мода. Приложение ничего не исправляет "
+            "автоматически — решение всегда за человеком."
+        )
+        hint.setProperty("role", "dim")
+        hint.setWordWrap(True)
+        v.addWidget(hint)
+
+        self.diag_area = QStackedWidget()
+        self.diag_table = QTableWidget(0, 4)
+        self.diag_table.setHorizontalHeaderLabels(
+            ["Уровень", "Файл", "Строка", "Проблема"]
+        )
+        dh = self.diag_table.horizontalHeader()
+        dh.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        dh.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        dh.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
+        dh.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        self.diag_table.setColumnWidth(0, 145)
+        self.diag_table.setColumnWidth(1, 330)
+        self.diag_table.setColumnWidth(2, 70)
+        setup_table(self.diag_table)
+        align_headers(self.diag_table, left_columns=(0, 1, 3),
+                      right_columns=(2,))
+        self.diag_area.addWidget(self.diag_table)
+        self.diag_empty = EmptyState(
+            "Проблем не найдено",
+            "Файлы локализации этого мода разобраны без ошибок."
+        )
+        self.diag_area.addWidget(self.diag_empty)
+        v.addWidget(self.diag_area, stretch=1)
         return w
 
     # ---------- загрузка ----------
@@ -299,7 +415,7 @@ class ModPage(QWidget):
         src = ctx.project["source_lang"]
         tgt = ctx.project["target_lang"]
         translated, of = scan.coverage(tgt, src)
-        cov = f"{100 * translated / of:.1f}%" if of else "—"
+        percent = (100.0 * translated / of) if of else None
         langs = ", ".join(
             f"{l} ({s.key_count})" for l, s in sorted(scan.languages.items())
         )
@@ -307,19 +423,34 @@ class ModPage(QWidget):
         for r in ctx.rows:
             counts[r.status] = counts.get(r.status, 0) + 1
         c = palette(self.theme)
-        chips = "  ".join(
-            f"<span style='color:{status_color(s, self.theme)}'>"
-            f"{status_label(s)}: {n}</span>"
+
+        self.coverage_value.setText(
+            "—" if percent is None else f"{percent:.0f}%"
+        )
+        color = (c["text_dim"] if percent is None else
+                 c["ok"] if percent >= 100 else
+                 c["err"] if percent == 0 else c["warn"])
+        self.coverage_value.setStyleSheet(
+            f"font-size: 28px; font-weight: 600; color: {color};"
+        )
+        self.coverage_bar.setValue(int(percent or 0))
+        self.coverage_caption.setText(
+            f"перевод {src} → {tgt}"
+            + (f" · {translated} из {of} строк" if of else "")
+        )
+        chips = "   ".join(
+            f"<span style='color:{status_color(s, self.theme)}'>■</span> "
+            f"{status_label(s)}: <b>{n}</b>"
             for s, n in sorted(counts.items(), key=lambda kv: -kv[1])
         )
+        self.status_chips.setText(chips or "—")
         self.info.setText(
-            f"<span style='color:{c['text_dim']}'>ID {scan.mod_id} · "
-            f"версия автора {d.version or '—'} · "
+            f"<span style='color:{c['text_dim']}'>ID {scan.mod_id}  ·  "
+            f"версия автора {d.version or '—'}  ·  "
             f"совместимость {d.supported_version or '—'}</span><br>"
-            f"<span style='color:{c['text_dim']}'>{scan.mod_dir}</span><br><br>"
-            f"<b>Языки:</b> {langs or '—'}<br>"
-            f"<b>Источник:</b> {src} → <b>цель:</b> {tgt} · "
-            f"<b>покрытие:</b> {cov}<br><br>{chips}"
+            f"<b>Языки в моде:</b> {langs or '—'}<br>"
+            f"<span style='color:{c['text_dim']}; font-size: 11px'>"
+            f"{scan.mod_dir}</span>"
         )
         idx = 0 if ctx.project["write_mode"] == "in_mod" else 1
         self.write_mode.blockSignals(True)
@@ -328,16 +459,38 @@ class ModPage(QWidget):
 
         self.refresh_rows()
 
-        diags = [
-            f"[{diag.severity}] {rel}:{diag.lineno}  {diag.code}: {diag.message}"
-            for rel, diag in scan.diagnostics
-        ]
-        self.diag.setPlainText(
-            "\n".join(diags) if diags else "Проблем в файлах мода не найдено."
+        self._fill_diagnostics(scan)
+        self._load_changes()
+
+    def _fill_diagnostics(self, scan):
+        c = palette(self.theme)
+        diags = scan.diagnostics
+        self.diag_table.setRowCount(len(diags))
+        for i, (rel, diag) in enumerate(diags):
+            level = QTableWidgetItem(
+                "ошибка" if diag.severity == "error" else "предупреждение"
+            )
+            level.setForeground(QColor(
+                c["err"] if diag.severity == "error" else c["warn"]
+            ))
+            self.diag_table.setItem(i, 0, level)
+            file_item = QTableWidgetItem(rel)
+            file_item.setToolTip(rel)
+            self.diag_table.setItem(i, 1, file_item)
+            line = QTableWidgetItem(str(diag.lineno) if diag.lineno else "—")
+            line.setTextAlignment(
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+            )
+            line.setForeground(QColor(c["text_dim"]))
+            self.diag_table.setItem(i, 2, line)
+            msg = QTableWidgetItem(diag.message)
+            msg.setToolTip(f"{diag.code}: {diag.message}")
+            self.diag_table.setItem(i, 3, msg)
+        self.diag_area.setCurrentWidget(
+            self.diag_table if diags else self.diag_empty
         )
         self.tabs.setTabText(3, f"Диагностика ({len(diags)})" if diags
                              else "Диагностика")
-        self._load_changes()
 
     def _load_changes(self):
         snaps = self.conn.execute(
@@ -433,6 +586,9 @@ class ModPage(QWidget):
         if row is None:
             return
         self.editor_key.setText(row.key)
+        self.editor_status.setText(
+            f"— {status_label(row.status).lower()}"
+        )
         base = row.baseline_source or ""
         self.col_base["text"].setPlainText(base)
         self.col_base["box"].setVisible(bool(base) and base != row.source_text)
@@ -442,8 +598,18 @@ class ModPage(QWidget):
             row.target_text or row.native_target or ""
         )
         self.col_target["text"].blockSignals(False)
-        self.btn_save.setEnabled(row.source_text is not None)
+        editable = row.source_text is not None
+        self.btn_save.setEnabled(editable)
+        self.btn_save_next.setEnabled(editable)
+        self.btn_copy_source.setEnabled(editable)
+        self.col_target["text"].setReadOnly(not editable)
         self._validate_editor()
+
+    def _copy_source(self):
+        row = self._current_row()
+        if row is not None and row.source_text is not None:
+            self.col_target["text"].setPlainText(row.source_text)
+            self.col_target["text"].setFocus()
 
     def _validate_editor(self):
         row = self._current_row()
