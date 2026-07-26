@@ -1,286 +1,287 @@
-"""Главное окно: сводка библиотеки, таблица модов, уведомления."""
+"""Главное окно: боковая навигация, экраны, статус-строка, уведомления."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
-    QComboBox,
+    QButtonGroup,
+    QDialog,
+    QFrame,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
-    QLineEdit,
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
-    QTableWidget,
-    QTableWidgetItem,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
-from ck3loc.core import db
-from ck3loc.core.scanner import scan_mod
-from ck3loc.core.steam import (
-    find_steam_root,
-    list_workshop_mod_dirs,
-    read_workshop_acf,
-    workshop_content_dirs,
-)
-from ck3loc.core.store import (
-    diff_snapshots,
-    latest_snapshot,
-    mark_missing_mods,
-    record_mod,
-    take_snapshot,
-)
-from ck3loc.core.vanilla import game_languages
+from ck3loc.core import settings
+from ck3loc.desktop.glossary_page import GlossaryPage
+from ck3loc.desktop.library_page import LibraryPage
+from ck3loc.desktop.mod_page import ModPage
+from ck3loc.desktop.settings_page import SettingsPage
+from ck3loc.desktop.theme import palette, stylesheet
+from ck3loc.desktop.workers import ScanWorker
 
-TARGET_LANG = "russian"
-SOURCE_LANG = "english"
+APP_TITLE = "CK3 Localization Manager"
+NAV = [
+    ("Библиотека", "library"),
+    ("Глоссарий", "glossary"),
+    ("Настройки", "settings"),
+]
 
 
-@dataclass
-class ModRow:
-    mod_id: str
-    name: str
-    n_langs: int
-    coverage: float | None  # None — нет локализации/источника
-    state: str
-    has_loc: bool
-
-
-class ScanWorker(QThread):
-    progress = Signal(int, int)
-    note = Signal(str)
-    finished_rows = Signal(list)
-
-    def run(self):
-        conn = db.connect()
-        try:
-            rows: list[ModRow] = []
-            root = find_steam_root()
-            if root is None:
-                self.note.emit("Steam не найден. Проверьте установку Steam.")
-                self.finished_rows.emit([])
-                return
-            content = workshop_content_dirs(root)
-            mod_dirs = list_workshop_mod_dirs(content)
-            langs = game_languages()
-            acf = read_workshop_acf()
-            total = len(mod_dirs)
-            for i, mod_dir in enumerate(mod_dirs, start=1):
-                self.progress.emit(i, total)
-                scan = scan_mod(mod_dir, langs)
-                entry = acf.get(scan.mod_id)
-                t_upd = int(entry.time_updated) if entry and entry.time_updated else 0
-                record_mod(conn, scan, steam_time_updated=t_upd)
-                if not scan.has_localization:
-                    rows.append(ModRow(scan.mod_id, scan.name, 0, None,
-                                       "нет локализации", False))
-                    continue
-                prev = latest_snapshot(conn, scan.mod_id)
-                snap = take_snapshot(conn, scan, steam_time_updated=t_upd)
-                if snap.is_new and prev is not None:
-                    self._report_changes(conn, scan, prev["id"], snap.snapshot_id)
-                src = scan.best_source_language(SOURCE_LANG) or SOURCE_LANG
-                translated, of = scan.coverage(TARGET_LANG, src)
-                if of == 0:
-                    rows.append(ModRow(scan.mod_id, scan.name,
-                                       len(scan.languages), None,
-                                       f"нет {src}", True))
-                elif translated == 0:
-                    rows.append(ModRow(scan.mod_id, scan.name,
-                                       len(scan.languages), 0.0,
-                                       "нет русского", True))
-                elif translated < of:
-                    rows.append(ModRow(scan.mod_id, scan.name,
-                                       len(scan.languages),
-                                       100.0 * translated / of,
-                                       f"{of - translated} пропущено", True))
-                else:
-                    rows.append(ModRow(scan.mod_id, scan.name,
-                                       len(scan.languages), 100.0,
-                                       "полный", True))
-            gone = mark_missing_mods(conn, {d.name for d in mod_dirs})
-            for g in gone:
-                self.note.emit(
-                    f"Мод {g} больше не установлен — данные и перевод "
-                    f"сохранены в базе."
-                )
-            self.finished_rows.emit(rows)
-        finally:
-            conn.close()
-
-    def _report_changes(self, conn, scan, old_id: int, new_id: int):
-        parts = []
-        for lang in scan.languages:
-            d = diff_snapshots(conn, old_id, new_id, lang)
-            if not d.empty:
-                parts.append(
-                    f"[{lang}] +{len(d.added)} ~{len(d.changed)} -{len(d.removed)}"
-                )
-        if parts:
-            self.note.emit(
-                f"«{scan.name}» обновился, локализация изменилась: "
-                + "; ".join(parts)
-            )
+class NotificationsDialog(QDialog):
+    def __init__(self, entries: list[str], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Уведомления")
+        self.resize(720, 420)
+        v = QVBoxLayout(self)
+        text = QPlainTextEdit()
+        text.setReadOnly(True)
+        text.setPlainText("\n".join(entries) if entries
+                          else "Пока нет уведомлений.")
+        v.addWidget(text)
+        btn = QPushButton("Закрыть")
+        btn.clicked.connect(self.accept)
+        v.addWidget(btn, alignment=Qt.AlignmentFlag.AlignRight)
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("CK3 Localization Manager")
-        self.resize(1100, 700)
-        self.rows: list[ModRow] = []
+        self.cfg = settings.load()
+        self.theme = self.cfg.get("theme", "dark")
+        self.notifications: list[str] = []
+        self.setWindowTitle(APP_TITLE)
+        self.resize(1280, 780)
+        self.setMinimumSize(1000, 640)
 
         central = QWidget()
-        layout = QVBoxLayout(central)
+        root = QHBoxLayout(central)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
 
-        self.summary = QLabel("Нажмите «Сканировать», чтобы найти моды.")
-        layout.addWidget(self.summary)
+        root.addWidget(self._build_sidebar())
 
-        controls = QHBoxLayout()
-        self.btn_scan = QPushButton("Сканировать библиотеку")
-        self.btn_scan.clicked.connect(self.start_scan)
-        controls.addWidget(self.btn_scan)
-        btn_batch = QPushButton("Перевести все…")
-        btn_batch.clicked.connect(self.open_batch)
-        controls.addWidget(btn_batch)
-        btn_keys = QPushButton("Ключи API…")
-        btn_keys.clicked.connect(self.open_keys)
-        controls.addWidget(btn_keys)
-        self.search = QLineEdit()
-        self.search.setPlaceholderText("Поиск по названию или ID…")
-        self.search.textChanged.connect(self.refresh_table)
-        controls.addWidget(self.search)
-        self.filter = QComboBox()
-        self.filter.addItems(
-            ["Все", "Без русского", "Русский неполный", "Полный русский",
-             "Без локализации"]
-        )
-        self.filter.currentIndexChanged.connect(self.refresh_table)
-        controls.addWidget(self.filter)
-        layout.addLayout(controls)
+        right = QWidget()
+        rv = QVBoxLayout(right)
+        rv.setContentsMargins(18, 16, 18, 12)
+        rv.setSpacing(14)
 
-        self.progress = QProgressBar()
-        self.progress.hide()
-        layout.addWidget(self.progress)
+        self.page_title = QLabel("Библиотека модов")
+        self.page_title.setProperty("role", "h1")
+        rv.addWidget(self.page_title)
 
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(
-            ["ID", "Название", "Языки", "Русский", "Состояние"]
-        )
-        self.table.horizontalHeader().setSectionResizeMode(
-            1, QHeaderView.ResizeMode.Stretch
-        )
-        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.doubleClicked.connect(self.open_mod)
-        layout.addWidget(self.table, stretch=1)
-
-        layout.addWidget(QLabel("Уведомления:"))
-        self.log = QPlainTextEdit()
-        self.log.setReadOnly(True)
-        self.log.setMaximumHeight(120)
-        layout.addWidget(self.log)
-
+        self.stack = QStackedWidget()
+        self.library = LibraryPage(self.theme)
+        self.library.open_mod.connect(self.open_mod)
+        self.library.rescan.connect(self.start_scan)
+        self.library.batch.connect(self.open_batch)
+        self.mod_page = ModPage(self.theme)
+        self.mod_page.back.connect(self.show_library)
+        self.mod_page.note.connect(self.add_note)
+        self.mod_page.request_translate.connect(self.open_translate)
+        self.glossary = GlossaryPage(self.theme)
+        self.settings_page = SettingsPage(self.theme)
+        self.settings_page.theme_changed.connect(self.apply_theme)
+        self.settings_page.langs_changed.connect(self._langs_changed)
+        for w in (self.library, self.mod_page, self.glossary, self.settings_page):
+            self.stack.addWidget(w)
+        rv.addWidget(self.stack, stretch=1)
+        root.addWidget(right, stretch=1)
         self.setCentralWidget(central)
-        self.worker: ScanWorker | None = None
 
-    # --- сканирование ---
+        # статус-строка
+        status = self.statusBar()
+        self.status_label = QLabel("Готово")
+        status.addWidget(self.status_label, stretch=1)
+        self.progress = QProgressBar()
+        self.progress.setMaximumWidth(260)
+        self.progress.hide()
+        status.addPermanentWidget(self.progress)
+        self.btn_notes = QPushButton("Уведомления")
+        self.btn_notes.setFlat(True)
+        self.btn_notes.clicked.connect(self.show_notifications)
+        status.addPermanentWidget(self.btn_notes)
+
+        self.apply_theme(self.theme)
+        self.worker: ScanWorker | None = None
+        if self.cfg.get("scan_on_start", True):
+            QTimer.singleShot(300, self.start_scan)
+
+    # ---------- каркас ----------
+
+    def _build_sidebar(self) -> QWidget:
+        bar = QFrame()
+        bar.setObjectName("Sidebar")
+        bar.setFixedWidth(210)
+        v = QVBoxLayout(bar)
+        v.setContentsMargins(0, 18, 0, 14)
+        v.setSpacing(2)
+
+        logo = QLabel("  CK3\n  Localization")
+        logo.setStyleSheet("font-size: 16px; font-weight: 700; padding: 0 14px 14px;")
+        v.addWidget(logo)
+
+        self.nav_group = QButtonGroup(self)
+        self.nav_group.setExclusive(True)
+        for i, (title, key) in enumerate(NAV):
+            btn = QPushButton(title)
+            btn.setObjectName("NavButton")
+            btn.setCheckable(True)
+            btn.setChecked(i == 0)
+            btn.clicked.connect(lambda _=False, k=key: self.go(k))
+            self.nav_group.addButton(btn, i)
+            v.addWidget(btn)
+        v.addStretch(1)
+
+        self.hint = QLabel(
+            "  Файлы автора мода\n  не изменяются —\n  приложение только\n"
+            "  добавляет перевод."
+        )
+        self.hint.setProperty("role", "dim")
+        self.hint.setStyleSheet("padding: 0 12px 8px; font-size: 11px;")
+        v.addWidget(self.hint)
+        return bar
+
+    def go(self, key: str):
+        index = {"library": 0, "glossary": 2, "settings": 3}[key]
+        titles = {
+            "library": "Библиотека модов",
+            "glossary": "Глоссарий терминов",
+            "settings": "Настройки",
+        }
+        self.stack.setCurrentIndex(index)
+        self.page_title.setText(titles[key])
+        for i, (_t, k) in enumerate(NAV):
+            self.nav_group.button(i).setChecked(k == key)
+
+    def show_library(self):
+        self.go("library")
+
+    def apply_theme(self, name: str):
+        self.theme = name
+        settings.set_value("theme", name)
+        self.setStyleSheet(stylesheet(name))
+        self.library.apply_theme(name)
+        self.mod_page.theme = name
+        if self.mod_page.ctx is not None:
+            self.mod_page.refresh()
+
+    # ---------- действия ----------
 
     def start_scan(self):
         if self.worker is not None and self.worker.isRunning():
             return
-        self.btn_scan.setEnabled(False)
+        cfg = settings.load()
+        self.library.set_busy(True)
         self.progress.show()
-        self.worker = ScanWorker()
+        self.status_label.setText("Сканирование библиотеки…")
+        self.worker = ScanWorker(cfg["source_lang"], cfg["target_lang"],
+                                 cfg.get("steam_path", ""))
         self.worker.progress.connect(self._on_progress)
         self.worker.note.connect(self.add_note)
         self.worker.finished_rows.connect(self._on_scan_done)
         self.worker.start()
 
-    def _on_progress(self, i: int, total: int):
+    def _on_progress(self, i: int, total: int, name: str):
         self.progress.setMaximum(total)
         self.progress.setValue(i)
+        self.status_label.setText(f"Сканирование: {i} из {total} — {name}")
 
     def _on_scan_done(self, rows: list):
-        self.rows = rows
-        self.btn_scan.setEnabled(True)
+        self.library.set_rows(rows)
+        self.library.set_busy(False)
         self.progress.hide()
+        if not rows:
+            self.status_label.setText(
+                "Моды не найдены. Проверьте путь к Steam в Настройках."
+            )
+            return
         with_loc = [r for r in rows if r.has_loc]
-        no_ru = [r for r in with_loc if r.coverage == 0.0]
-        partial = [r for r in with_loc if r.coverage and 0 < r.coverage < 100]
-        self.summary.setText(
-            f"Модов установлено: {len(rows)} · С локализацией: {len(with_loc)} · "
-            f"Без русского: {len(no_ru)} · Русский неполный: {len(partial)}"
+        none = sum(1 for r in with_loc if r.coverage == 0.0)
+        self.status_label.setText(
+            f"Готово: {len(rows)} модов, {len(with_loc)} с локализацией, "
+            f"{none} без перевода"
         )
-        self.refresh_table()
-        self.add_note("Сканирование завершено.")
+        self.add_note(f"Сканирование завершено: {len(rows)} модов.")
 
-    # --- таблица ---
+    def open_mod(self, mod_id: str):
+        if self.mod_page.load(mod_id):
+            self.stack.setCurrentIndex(1)
+            self.page_title.setText("Карточка мода")
+            for i in range(len(NAV)):
+                self.nav_group.button(i).setChecked(False)
 
-    def refresh_table(self):
-        query = self.search.text().strip().lower()
-        mode = self.filter.currentText()
-        shown = []
-        for r in self.rows:
-            if query and query not in r.name.lower() and query not in r.mod_id:
-                continue
-            if mode == "Без русского" and not (r.has_loc and r.coverage == 0.0):
-                continue
-            if mode == "Русский неполный" and not (
-                r.coverage and 0 < r.coverage < 100
-            ):
-                continue
-            if mode == "Полный русский" and r.coverage != 100.0:
-                continue
-            if mode == "Без локализации" and r.has_loc:
-                continue
-            shown.append(r)
-        self.table.setRowCount(len(shown))
-        for i, r in enumerate(shown):
-            cov = "" if r.coverage is None else f"{r.coverage:.1f}%"
-            for col, text in enumerate(
-                [r.mod_id, r.name, str(r.n_langs) if r.has_loc else "—",
-                 cov, r.state]
-            ):
-                item = QTableWidgetItem(text)
-                if col in (0, 2, 3):
-                    item.setTextAlignment(
-                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-                    )
-                self.table.setItem(i, col, item)
+    def open_translate(self, mod_id: str):
+        from ck3loc.core.ops import rows_to_translate
+        from ck3loc.core.pipeline import build_vanilla_lookup, estimate
+        from ck3loc.desktop.translate_dialog import TranslateDialog
 
-    def open_mod(self):
-        row_i = self.table.currentRow()
-        if row_i < 0:
+        ctx = self.mod_page.ctx
+        if ctx is None:
             return
-        mod_id = self.table.item(row_i, 0).text()
-        from ck3loc.desktop.mod_dialog import ModDialog
-
-        try:
-            dlg = ModDialog(mod_id, parent=self)
-        except Exception as e:  # noqa: BLE001
-            QMessageBox.warning(self, "Ошибка", str(e))
+        rows = rows_to_translate(ctx, "all")
+        if not rows:
+            QMessageBox.information(self, "Перевод",
+                                    "Переводить нечего — всё актуально.")
             return
-        dlg.note.connect(self.add_note)
+        self.status_label.setText("Считаю смету…")
+        vl = build_vanilla_lookup(ctx.project["source_lang"],
+                                  ctx.project["target_lang"])
+        est = estimate(ctx, rows, vanilla_lookup=vl)
+        api_rows = est.rows - est.covered_by_vanilla - est.covered_by_memory
+        c = palette(self.theme)
+        html = (
+            f"Строк на перевод: <b>{est.rows}</b><br>"
+            f"<span style='color:{c['ok']}'>Закроется ванилью CK3 бесплатно: "
+            f"{est.covered_by_vanilla}</span><br>"
+            f"<span style='color:{c['ok']}'>Закроется памятью переводов: "
+            f"{est.covered_by_memory}</span><br>"
+            f"Уйдёт в API: <b>{api_rows}</b> строк, ~{est.chars_to_api} символов"
+        )
+        self.status_label.setText("Готово")
+        dlg = TranslateDialog(mod_id, html, parent=self)
         dlg.exec()
-
-    def add_note(self, text: str):
-        self.log.appendPlainText(text)
-
-    def open_keys(self):
-        from ck3loc.desktop.translate_dialog import KeysDialog
-
-        KeysDialog(parent=self).exec()
+        if dlg.stats is not None:
+            self.add_note(
+                f"«{ctx.scan.name}»: переведено {dlg.stats.translated} строк "
+                f"(ошибок {len(dlg.stats.failed)})"
+            )
+        self.mod_page.reload()
 
     def open_batch(self):
         from ck3loc.desktop.translate_dialog import BatchDialog
 
-        BatchDialog(parent=self).exec()
-        self.add_note("Пакетный перевод завершён — пересканируйте библиотеку.")
+        dlg = BatchDialog(parent=self)
+        dlg.exec()
+        self.add_note("Пакетный перевод: сессия закрыта.")
+
+    def _langs_changed(self):
+        self.add_note("Языки изменены — пересканируйте библиотеку.")
+
+    # ---------- уведомления ----------
+
+    def add_note(self, text: str):
+        import time
+
+        entry = f"[{time.strftime('%H:%M')}] {text}"
+        self.notifications.append(entry)
+        self.btn_notes.setText(f"Уведомления ({len(self.notifications)})")
+        self.status_label.setText(text)
+
+    def show_notifications(self):
+        NotificationsDialog(list(reversed(self.notifications)), self).exec()
+
+    def closeEvent(self, event):
+        if self.worker is not None and self.worker.isRunning():
+            self.worker.stop()
+            self.worker.wait(3000)
+        self.mod_page.close_db()
+        self.glossary.close_db()
+        super().closeEvent(event)
