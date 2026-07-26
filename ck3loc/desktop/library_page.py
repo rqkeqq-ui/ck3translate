@@ -29,6 +29,7 @@ from ck3loc.desktop.coverage_bar import (
 from ck3loc.desktop.theme import palette
 from ck3loc.desktop.widgets import (
     EmptyState,
+    MultiSelectFilter,
     SortItem,
     Tile,
     align_headers,
@@ -45,7 +46,8 @@ RUSSIFIERS = "Моды-русификаторы"
 MINE = "Мои проекты"
 ERRORS = "С ошибками"
 NO_LOC = "Без локализации"
-FILTERS = [ALL, NO_TRANSLATION, PARTIAL, FULL, EXTERNAL, RUSSIFIERS,
+# «Все моды» — не пункт списка, а состояние «ничего не выбрано»
+FILTERS = [NO_TRANSLATION, PARTIAL, FULL, EXTERNAL, RUSSIFIERS,
            MINE, ERRORS, NO_LOC]
 
 
@@ -117,10 +119,9 @@ class LibraryPage(QWidget):
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self.refresh_table)
         controls.addWidget(self.search, stretch=1)
-        self.filter = QComboBox()
-        self.filter.addItems(FILTERS)
-        self.filter.setMinimumWidth(180)
-        self.filter.currentIndexChanged.connect(self.refresh_table)
+        self.filter = MultiSelectFilter(FILTERS, ALL)
+        self.filter.setMinimumWidth(190)
+        self.filter.changed.connect(self.refresh_table)
         controls.addWidget(self.filter)
         root.addLayout(controls)
 
@@ -208,9 +209,12 @@ class LibraryPage(QWidget):
         self.refresh_table()
 
     def _set_filter(self, name: str):
-        idx = self.filter.findText(name)
-        if idx >= 0:
-            self.filter.setCurrentIndex(idx)
+        """Выбрать ровно одно условие (клик по плитке)."""
+        self.filter.set_selected([] if name == ALL else [name])
+
+    def _passes_any(self, r: ModRow, modes: list[str]) -> bool:
+        """Условия объединяются по «или»; пустой набор — показать всё."""
+        return not modes or any(self._passes(r, mode) for mode in modes)
 
     def _passes(self, r: ModRow, mode: str) -> bool:
         if mode == NO_TRANSLATION:
@@ -233,14 +237,14 @@ class LibraryPage(QWidget):
 
     def refresh_table(self):
         query = self.search.text().strip().lower()
-        mode = self.filter.currentText()
+        modes = self.filter.selected()
         c = palette(self.theme)
         for name, tile in self.tiles.items():
-            tile.set_active(name == mode)
+            tile.set_active(name in modes if modes else name == ALL)
 
         shown = [
             r for r in self.rows
-            if self._passes(r, mode)
+            if self._passes_any(r, modes)
             and (not query or query in r.name.lower() or query in r.mod_id)
         ]
         self._shown = shown
@@ -343,9 +347,10 @@ class LibraryPage(QWidget):
             self.table.setItem(i, 5, upd)
 
         self.table.setSortingEnabled(was_sorting)
-        self._update_area(shown, mode, query)
+        self._update_area(shown, modes, query)
 
-    def _update_area(self, shown: list, mode: str, query: str):
+    def _update_area(self, shown: list, modes: list[str], query: str):
+        mode = ", ".join(modes) if modes else ALL
         if not self._scanned or not self.rows:
             self.empty.set_text(
                 "Библиотека ещё не просканирована",

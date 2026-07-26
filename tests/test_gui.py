@@ -207,6 +207,55 @@ class TestLibraryPage(GuiTestCase):
         page._set_filter("Моды-русификаторы")
         self.assertEqual(page.table.rowCount(), 1)
 
+    def test_multi_select_filter(self):
+        """Несколько условий объединяются по «или»."""
+        from ck3loc.desktop.library_page import LibraryPage
+
+        page = LibraryPage("dark")
+        page.set_rows(self._rows())   # без перевода, неполный, полный, без лок.
+        page.filter.set_selected(["Без перевода"])
+        self.assertEqual(page.table.rowCount(), 1)
+        page.filter.set_selected(["Без перевода", "Перевод полный"])
+        self.assertEqual(page.table.rowCount(), 2)
+        page.filter.set_selected(["Без перевода", "Перевод полный",
+                                  "Перевод неполный"])
+        self.assertEqual(page.table.rowCount(), 3)
+
+    def test_select_all_and_clear_all(self):
+        from ck3loc.desktop.library_page import LibraryPage
+
+        page = LibraryPage("dark")
+        page.set_rows(self._rows())
+        page.filter.select_all()
+        self.assertEqual(len(page.filter.selected()), 8)
+        # «выделить все» показывает всё, что попадает хоть под одно условие
+        self.assertEqual(page.table.rowCount(), 4)
+        page.filter.clear_all()
+        self.assertEqual(page.filter.selected(), [])
+        self.assertEqual(page.table.rowCount(), 4)
+        self.assertIn("Все моды", page.filter.text())
+
+    def test_filter_button_text(self):
+        from ck3loc.desktop.library_page import LibraryPage
+
+        page = LibraryPage("dark")
+        page.set_rows(self._rows())
+        self.assertIn("Все моды", page.filter.text())
+        page.filter.set_selected(["С ошибками"])
+        self.assertIn("С ошибками", page.filter.text())
+        page.filter.set_selected(["С ошибками", "Мои проекты"])
+        self.assertIn("2", page.filter.text())
+
+    def test_tile_click_selects_single_filter(self):
+        from ck3loc.desktop.library_page import LibraryPage
+
+        page = LibraryPage("dark")
+        page.set_rows(self._rows())
+        page.filter.set_selected(["С ошибками", "Мои проекты"])
+        page._set_filter("Без перевода")
+        self.assertEqual(page.filter.selected(), ["Без перевода"])
+        self.assertEqual(page.tile_none.property("active"), "true")
+
     def test_percent_never_lies_about_completeness(self):
         """«100%» только при нуле пропущенных, «0%» — только когда ничего нет."""
         from ck3loc.desktop.coverage_bar import format_percent

@@ -247,6 +247,39 @@ def stylesheet(name: str = "dark") -> str:
     QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
     QScrollArea {{ border: none; background: transparent; }}
 
+    /* выпадающее меню фильтров */
+    QToolButton {{
+        background: {c['panel']};
+        border: 1px solid {c['border']};
+        border-radius: 6px;
+        padding: 7px 12px;
+        text-align: left;
+    }}
+    QToolButton:hover {{ border-color: {c['accent_dim']}; }}
+    QToolButton::menu-indicator {{ image: none; width: 0; }}
+    QMenu {{
+        background: {c['panel']};
+        border: 1px solid {c['border']};
+        border-radius: 8px;
+        padding: 6px;
+    }}
+    QMenu::item {{
+        padding: 7px 14px 7px 30px;
+        border-radius: 5px;
+        color: {c['text']};
+    }}
+    QMenu::item:selected {{ background: {c['panel3']}; }}
+    QMenu::separator {{
+        height: 1px; background: {c['border']}; margin: 6px 8px;
+    }}
+    QMenu::indicator {{
+        width: 14px; height: 14px; left: 9px; border-radius: 4px;
+        border: 1px solid {c['border']}; background: {c['panel2']};
+    }}
+    QMenu::indicator:checked {{
+        background: {c['accent']}; border-color: {c['accent']};
+    }}
+
     /* прочее */
     QSplitter::handle {{ background: {c['border']}; height: 1px; }}
     QStatusBar {{

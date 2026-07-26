@@ -63,6 +63,10 @@ T: dict[str, tuple[str, str, str, str, str, str]] = {
     "Мои проекты": ("My projects", "Mis proyectos", "Mes projets", "Meine Projekte", "我的项目", "내 프로젝트"),
     "С ошибками": ("With errors", "Con errores", "Avec erreurs", "Mit Fehlern", "有错误", "오류 있음"),
     "Без локализации": ("No localization", "Sin localización", "Sans localisation", "Ohne Lokalisierung", "无本地化", "현지화 없음"),
+    "Выделить все": ("Select all", "Seleccionar todo", "Tout sélectionner", "Alle auswählen", "全选", "모두 선택"),
+    "Снять все": ("Clear all", "Quitar todo", "Tout décocher", "Auswahl aufheben", "全部取消", "모두 해제"),
+    "Выбрано: {n}": ("{n} selected", "{n} seleccionados", "{n} sélectionnés", "{n} ausgewählt", "已选 {n} 项", "{n}개 선택"),
+    "Фильтры не заданы — показаны все моды": ("No filters — all mods are shown", "Sin filtros: se muestran todos los mods", "Aucun filtre — tous les mods sont affichés", "Keine Filter — alle Mods werden angezeigt", "未设置筛选——显示全部模组", "필터 없음 — 모든 모드 표시"),
 
     # --- столбцы таблиц ---
     "Мод": ("Mod", "Mod", "Mod", "Mod", "模组", "모드"),
