@@ -235,6 +235,140 @@ def cmd_changes(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_export(args: argparse.Namespace) -> int:
+    from ck3loc.core import db
+    from ck3loc.core.bundle import export_jsonl
+    from ck3loc.core.ops import load_project_context, rows_to_translate
+    from ck3loc.core.xliff import export_xliff
+
+    conn = db.connect()
+    ctx = load_project_context(conn, args.mod_id, args.source, args.target)
+    if ctx is None:
+        print(f"Мод {args.mod_id} не найден.")
+        return 1
+    rows = rows_to_translate(ctx, args.what)
+    if not rows:
+        print("Строк для экспорта нет — всё переведено и актуально.")
+        return 0
+    out = Path(args.output) if args.output else Path.cwd() / (
+        f"{args.mod_id}_{args.target}.{ 'xliff' if args.fmt == 'xliff' else 'jsonl'}"
+    )
+    if args.fmt == "xliff":
+        res = export_xliff(conn, ctx.project_id, rows, out,
+                           ctx.project["source_lang"], args.target)
+        print(f"Экспортировано строк: {res.unit_count}")
+        print(f"Файл: {res.path}")
+    else:
+        res = export_jsonl(conn, ctx.project_id, rows, out,
+                           ctx.project["source_lang"], args.target)
+        print(f"Экспортировано строк: {res.unit_count}")
+        print(f"Файл задания: {res.path}")
+        print(f"Промпт для LLM: {res.prompt_path}")
+    conn.close()
+    return 0
+
+
+def cmd_import(args: argparse.Namespace) -> int:
+    from ck3loc.core import db
+    from ck3loc.core.bundle import import_jsonl
+    from ck3loc.core.ops import apply_import_report, load_project_context
+    from ck3loc.core.xliff import import_xliff
+
+    conn = db.connect()
+    ctx = load_project_context(conn, args.mod_id, args.source, args.target)
+    if ctx is None:
+        print(f"Мод {args.mod_id} не найден.")
+        return 1
+    path = Path(args.file)
+    if path.suffix.lower() in (".xliff", ".xlf"):
+        report = import_xliff(conn, path, ctx.source_values)
+    else:
+        report = import_jsonl(conn, path, ctx.source_values)
+    if not report.ok:
+        print(f"Импорт остановлен: {report.fatal}")
+        return 1
+    n = apply_import_report(ctx, report)
+    print(f"Принято: {n}")
+    if report.rejected:
+        print(f"Отклонено: {len(report.rejected)}")
+        for r in report.rejected[:15]:
+            print(f"  {r.key}: {r.reason}")
+        if len(report.rejected) > 15:
+            print(f"  … ещё {len(report.rejected) - 15}")
+    conn.close()
+    return 0
+
+
+def cmd_write(args: argparse.Namespace) -> int:
+    from ck3loc.core import db
+    from ck3loc.core.ops import load_project_context
+    from ck3loc.core.store import set_project_option
+    from ck3loc.core.writer import apply_write_plan, build_write_plan
+
+    conn = db.connect()
+    ctx = load_project_context(conn, args.mod_id, args.source, args.target)
+    if ctx is None:
+        print(f"Мод {args.mod_id} не найден.")
+        return 1
+    if args.mode:
+        set_project_option(conn, ctx.project_id, "write_mode", args.mode)
+        ctx.project["write_mode"] = args.mode
+    plan = build_write_plan(ctx.scan, ctx.project, ctx.units, args.build)
+    print(f"Режим записи: {plan.write_mode}, сборка: {plan.build_mode}")
+    print(f"Файлов будет записано: {len(plan.files)}, ключей: {plan.total_keys}")
+    for f in plan.files:
+        print(f"  {f.abs_path}  ({len(f.keys)} ключей)" if f.keys
+              else f"  {f.abs_path}")
+    if plan.skipped_keys:
+        print(f"Пропущено строк: {len(plan.skipped_keys)}")
+        for key, reason in plan.skipped_keys[:10]:
+            print(f"  {key}: {reason}")
+    if args.dry_run:
+        print("Пробный прогон — на диск ничего не записано.")
+        return 0
+    if plan.total_keys == 0:
+        print("Записывать нечего.")
+        return 0
+    result = apply_write_plan(conn, ctx.project_id, plan, ctx.scan, ctx.units)
+    print(f"Записано файлов: {len(result.written)}"
+          + (f", резервных копий: {len(result.backups)}" if result.backups else ""))
+    if plan.write_mode == "patch_mod":
+        print("Не забудьте включить патч-мод в плейсете ПОСЛЕ оригинального мода.")
+    conn.close()
+    return 0
+
+
+def cmd_verify(args: argparse.Namespace) -> int:
+    from ck3loc.core import db
+    from ck3loc.core.ops import load_project_context
+    from ck3loc.core.writer import apply_write_plan, build_write_plan, verify_outputs
+
+    conn = db.connect()
+    ctx = load_project_context(conn, args.mod_id, args.source, args.target)
+    if ctx is None:
+        print(f"Мод {args.mod_id} не найден.")
+        return 1
+    checks = verify_outputs(conn, ctx.project_id)
+    if not checks:
+        print("Для этого мода приложение ещё ничего не записывало.")
+        return 0
+    bad = [c for c in checks if c.state != "ok"]
+    for c in checks:
+        mark = {"ok": "✓", "missing": "✗ стёрт", "modified": "! изменён извне"}[c.state]
+        print(f"  {mark}  {c.path}")
+    if not bad:
+        print("Все записанные файлы на месте и не изменены.")
+        return 0
+    if args.restore:
+        plan = build_write_plan(ctx.scan, ctx.project, ctx.units)
+        apply_write_plan(conn, ctx.project_id, plan, ctx.scan, ctx.units)
+        print(f"Восстановлено из базы: {len(plan.files)} файлов.")
+    else:
+        print("Запустите с --restore, чтобы восстановить из базы.")
+    conn.close()
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="ck3loc", description="CK3 Localization Manager")
     p.add_argument("--steam", help="путь к папке Steam (если не найдён сам)")
@@ -259,6 +393,38 @@ def build_parser() -> argparse.ArgumentParser:
     pc = sub.add_parser("changes", help="что изменилось у мода с прошлого снимка")
     pc.add_argument("mod_id")
     pc.set_defaults(func=cmd_changes)
+
+    def _langs(sp):
+        sp.add_argument("--source", default="english")
+        sp.add_argument("--target", default="russian")
+
+    pe = sub.add_parser("export", help="выгрузить файл-задание для внешней LLM")
+    pe.add_argument("mod_id")
+    pe.add_argument("--what", choices=["missing", "stale", "all"], default="missing")
+    pe.add_argument("--fmt", choices=["jsonl", "xliff"], default="jsonl")
+    pe.add_argument("-o", "--output", help="куда сохранить файл")
+    _langs(pe)
+    pe.set_defaults(func=cmd_export)
+
+    pi = sub.add_parser("import", help="импортировать переведённый файл")
+    pi.add_argument("mod_id")
+    pi.add_argument("file")
+    _langs(pi)
+    pi.set_defaults(func=cmd_import)
+
+    pw = sub.add_parser("write", help="записать перевод (внутрь мода или патч-модом)")
+    pw.add_argument("mod_id")
+    pw.add_argument("--mode", choices=["in_mod", "patch_mod"])
+    pw.add_argument("--build", choices=["auto", "full", "delta"], default="auto")
+    pw.add_argument("--dry-run", action="store_true", help="показать план без записи")
+    _langs(pw)
+    pw.set_defaults(func=cmd_write)
+
+    pv = sub.add_parser("verify", help="проверить записанные файлы; --restore для восстановления")
+    pv.add_argument("mod_id")
+    pv.add_argument("--restore", action="store_true")
+    _langs(pv)
+    pv.set_defaults(func=cmd_verify)
     return p
 
 
