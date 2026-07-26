@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 
 from ck3loc.core import settings
 from ck3loc.core.i18n import tr_format
+from ck3loc.desktop.coverage_bar import SEGMENTS_ROLE, CoverageDelegate, describe
 from ck3loc.desktop.theme import palette
 from ck3loc.desktop.widgets import (
     EmptyState,
@@ -96,7 +97,7 @@ class LibraryPage(QWidget):
         self.btn_scan.setToolTip("Обновить список модов и снять снимки (F5)")
         self.btn_scan.clicked.connect(self.rescan.emit)
         controls.addWidget(self.btn_scan)
-        self.btn_batch = QPushButton("Перевести всё без перевода…")
+        self.btn_batch = QPushButton("Перевести все моды, где перевода нет…")
         self.btn_batch.clicked.connect(self.batch.emit)
         controls.addWidget(self.btn_batch)
         self.btn_mod_dir = QPushButton("Папка модов CK3")
@@ -122,8 +123,10 @@ class LibraryPage(QWidget):
         self.area = QStackedWidget()
         self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(
-            ["Мод", "ID", "Языки", "Перевод", "Состояние", "Обновлён"]
+            ["Мод", "ID", "Языки", "Переведено", "Состояние", "Обновлён"]
         )
+        self.coverage_delegate = CoverageDelegate(theme)
+        self.table.setItemDelegateForColumn(3, self.coverage_delegate)
         h = self.table.horizontalHeader()
         h.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         h.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
@@ -133,10 +136,11 @@ class LibraryPage(QWidget):
         h.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
         self.table.setColumnWidth(1, 105)
         self.table.setColumnWidth(2, 92)
-        self.table.setColumnWidth(3, 90)
+        self.table.setColumnWidth(3, 130)
         self.table.setColumnWidth(4, 190)
         self.table.setColumnWidth(5, 100)
-        setup_table(self.table)
+        # строка выше обычной: под процентом рисуется полоска источников
+        setup_table(self.table, row_height=38)
         self.table.doubleClicked.connect(self._open_current)
         align_headers(self.table, left_columns=(0, 4), right_columns=(1, 2, 3, 5))
         # сортировка по любому столбцу; числа и даты сортируются как числа
@@ -242,7 +246,7 @@ class LibraryPage(QWidget):
         show_covers = bool(settings.get("show_covers_in_list"))
         self.table.setIconSize(QSize(56, 32) if show_covers else QSize(0, 0))
         self.table.verticalHeader().setDefaultSectionSize(
-            38 if show_covers else 30
+            44 if show_covers else 38
         )
         self.table.setRowCount(len(shown))
         for i, r in enumerate(shown):
@@ -299,6 +303,9 @@ class LibraryPage(QWidget):
                 ))
             else:
                 cov.setForeground(QColor(c["text_dim"]))
+            if r.segments:
+                cov.setData(SEGMENTS_ROLE, r.segments)
+                cov.setToolTip(describe(r.segments))
             self.table.setItem(i, 3, cov)
 
             state = SortItem(

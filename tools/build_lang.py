@@ -37,11 +37,20 @@ T: dict[str, tuple[str, str, str, str, str, str]] = {
     "Неполный": ("Partial", "Parcial", "Partielle", "Unvollständig", "不完整", "부분 번역"),
     "Чужой перевод": ("External", "Traducción externa", "Traduction externe", "Fremdübersetzung", "外部翻译", "외부 번역"),
     "Ошибки": ("Errors", "Errores", "Erreurs", "Fehler", "错误", "오류"),
+    "Переведено": ("Translated", "Traducido", "Traduit", "Übersetzt", "已翻译", "번역됨"),
+
+    # --- источники перевода (полоска) ---
+    "перевод автора мода": ("mod author's translation", "traducción del autor", "traduction de l'auteur", "Übersetzung des Autors", "作者的翻译", "제작자 번역"),
+    "мод-русификатор": ("translation mod", "mod de traducción", "mod de traduction", "Übersetzungsmod", "翻译模组", "번역 모드"),
+    "ваш перевод": ("your translation", "tu traducción", "votre traduction", "Ihre Übersetzung", "你的翻译", "내 번역"),
+    "устарело": ("outdated", "desactualizado", "obsolète", "veraltet", "已过时", "오래됨"),
+    "не хватает": ("missing", "faltan", "manquantes", "fehlen", "缺少", "누락"),
 
     # --- панель библиотеки ---
     "Сканировать библиотеку": ("Scan library", "Escanear biblioteca", "Analyser la bibliothèque", "Bibliothek scannen", "扫描模组库", "라이브러리 검사"),
     "Сканирование…": ("Scanning…", "Escaneando…", "Analyse…", "Wird gescannt…", "扫描中…", "검사 중…"),
-    "Перевести всё без перевода…": ("Translate everything untranslated…", "Traducir todo lo no traducido…", "Traduire tout ce qui manque…", "Alles Unübersetzte übersetzen…", "翻译所有未翻译内容…", "번역 없는 모드 전체 번역…"),
+    "Перевести все моды, где перевода нет…": ("Translate all mods with no translation…", "Traducir todos los mods sin traducción…", "Traduire tous les mods sans traduction…", "Alle Mods ohne Übersetzung übersetzen…", "翻译所有没有翻译的模组…", "번역이 없는 모든 모드 번역…"),
+    "Перевести все моды, где перевода нет": ("Translate all mods with no translation", "Traducir todos los mods sin traducción", "Traduire tous les mods sans traduction", "Alle Mods ohne Übersetzung übersetzen", "翻译所有没有翻译的模组", "번역이 없는 모든 모드 번역"),
     "Папка модов CK3": ("CK3 mods folder", "Carpeta de mods de CK3", "Dossier des mods CK3", "CK3-Mod-Ordner", "CK3 模组文件夹", "CK3 모드 폴더"),
     "Поиск по названию или ID мода…   (Ctrl+F)": ("Search by name or mod ID…   (Ctrl+F)", "Buscar por nombre o ID…   (Ctrl+F)", "Rechercher par nom ou ID…   (Ctrl+F)", "Nach Name oder ID suchen…   (Ctrl+F)", "按名称或 ID 搜索…（Ctrl+F）", "이름 또는 ID로 검색…   (Ctrl+F)"),
 

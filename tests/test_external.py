@@ -193,6 +193,110 @@ class TestCoverageWithOwnTranslation(unittest.TestCase):
         self.assertEqual(missing, cov.missing)
 
 
+class TestBreakdown(unittest.TestCase):
+    """Разложение перевода по источникам для полоски."""
+
+    def setUp(self):
+        self._td = tempfile.TemporaryDirectory()
+        base = Path(self._td.name)
+        os.environ["CK3LOC_DATA"] = str(base / "data")
+        self.conn = db.connect()
+        self.workshop = base / "workshop"
+        self.mod = make_mod(
+            self.workshop, "1000", "Mod", "english",
+            [(f"k{i}", f"Text {i}") for i in range(100)],
+        )
+        self._write_native([(f"k{i}", f"Текст {i}") for i in range(60)])
+        self.snapshot()
+
+    def _write_native(self, items):
+        d = self.mod / "localization" / "russian"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "own_l_russian.yml").write_bytes(build_new_file("russian", items))
+
+    def snapshot(self):
+        scan = scan_mod(self.mod)
+        record_mod(self.conn, scan)
+        take_snapshot(self.conn, scan)
+
+    def tearDown(self):
+        self.conn.close()
+        os.environ.pop("CK3LOC_DATA", None)
+        self._td.cleanup()
+
+    def test_parts_sum_to_total(self):
+        from ck3loc.core.external_translations import coverage_breakdown
+
+        b = coverage_breakdown(self.conn, "1000", "english", "russian")
+        self.assertEqual(b.total, 100)
+        self.assertEqual(b.own, 60)
+        self.assertEqual(b.missing, 40)
+        self.assertEqual(sum(n for _k, n in b.segments()), b.total)
+
+    def test_own_translation_and_ours_do_not_double_count(self):
+        from ck3loc.core.external_translations import coverage_breakdown
+        from ck3loc.core.ops import load_project_context
+        from ck3loc.core.scanner import semantic_hash
+        from ck3loc.core.status import MACHINE
+        from ck3loc.core.store import upsert_unit
+
+        ctx = load_project_context(self.conn, "1000", mod_dir=self.mod)
+        # переводим 10 недостающих строк и 1 уже переведённую автором
+        for i in list(range(60, 70)) + [0]:
+            upsert_unit(self.conn, ctx.project_id, f"k{i}", f"Text {i}",
+                        semantic_hash(f"Text {i}"), f"Наш {i}", MACHINE, "t")
+        self.conn.commit()
+        b = coverage_breakdown(self.conn, "1000", "english", "russian")
+        self.assertEqual(b.mine, 11)
+        self.assertEqual(b.own, 59)      # k0 ушёл в «ваш перевод»
+        self.assertEqual(b.missing, 30)
+        self.assertEqual(sum(n for _k, n in b.segments()), 100)
+
+    def test_native_translation_goes_stale_when_author_changes_source(self):
+        """У чужого перевода нет отпечатка, устаревание видно по снимкам."""
+        from ck3loc.core.external_translations import (
+            coverage_breakdown,
+            native_stale_keys,
+        )
+        from ck3loc.core.locparser import LocFile
+
+        self.assertEqual(
+            native_stale_keys(self.conn, "1000", "english", "russian"), set()
+        )
+        # автор изменил английский у двух строк, русский не тронул
+        path = next((self.mod / "localization" / "english").rglob("*.yml"))
+        loc = LocFile.load(path)
+        for key in ("k1", "k2"):
+            loc.get(key).set_value(loc.get(key).value + " (updated)")
+        path.write_bytes(loc.to_bytes())
+        self.snapshot()
+
+        stale = native_stale_keys(self.conn, "1000", "english", "russian")
+        self.assertEqual(stale, {"k1", "k2"})
+        b = coverage_breakdown(self.conn, "1000", "english", "russian")
+        self.assertEqual(b.stale, 2)
+        self.assertEqual(b.own, 58)
+        self.assertEqual(b.translated, 60)   # устаревшие в игре видны
+        self.assertEqual(sum(n for _k, n in b.segments()), 100)
+
+    def test_native_not_stale_if_author_updated_translation_too(self):
+        from ck3loc.core.external_translations import native_stale_keys
+        from ck3loc.core.locparser import LocFile
+
+        path = next((self.mod / "localization" / "english").rglob("*.yml"))
+        loc = LocFile.load(path)
+        loc.get("k1").set_value("Text 1 (updated)")
+        path.write_bytes(loc.to_bytes())
+        self._write_native(
+            [(f"k{i}", f"Текст {i}" + (" (обновлено)" if i == 1 else ""))
+             for i in range(60)]
+        )
+        self.snapshot()
+        self.assertEqual(
+            native_stale_keys(self.conn, "1000", "english", "russian"), set()
+        )
+
+
 class TestEffectOnTranslation(ExternalTestCase):
     def test_covered_keys_are_not_missing(self):
         cands = find_provider_candidates(self.conn, "english", "russian")

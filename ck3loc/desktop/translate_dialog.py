@@ -128,7 +128,7 @@ class BatchDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Перевести все моды без перевода")
+        self.setWindowTitle("Перевести все моды, где перевода нет")
         self.resize(720, 520)
         v = QVBoxLayout(self)
         v.setSpacing(12)
