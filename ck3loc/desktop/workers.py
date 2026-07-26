@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
@@ -31,6 +31,8 @@ class ModRow:
     updated_ts: int = 0          # для сортировки по дате обновления
     provider_new: int = 0        # строк, которые добавляет русификатор
     provider_total: int = 0      # всего покрывает русификатор
+    # из чего складывается перевод: [(вид, количество)] для полоски
+    segments: list = field(default_factory=list)
 
 
 class ScanWorker(QThread):
@@ -146,6 +148,7 @@ class ScanWorker(QThread):
                     f"сохранены в базе."
                 )
             self._detect_providers(conn, rows)
+            self._fill_breakdowns(conn, rows)
             self.finished_rows.emit(rows)
         except Exception as e:  # noqa: BLE001
             self.note.emit(f"Ошибка сканирования: {e}")
@@ -217,6 +220,55 @@ class ScanWorker(QThread):
             f"Найдено модов-русификаторов: {len(roles)}; они покрывают "
             f"{len(index)} модов."
         )
+
+    def _fill_breakdowns(self, conn, rows: list[ModRow]):
+        """Разложить перевод каждого мода по источникам для полоски.
+
+        Дорогой разбор нужен только там, где есть чей-то ещё перевод:
+        для обычного мода хватает пары чисел из скана.
+        """
+        from ck3loc.core.external_translations import Breakdown, coverage_breakdown
+
+        with_units = {
+            r["mod_id"] for r in conn.execute(
+                """SELECT DISTINCT mod_id FROM translation_projects p
+                   WHERE EXISTS (SELECT 1 FROM translation_units u
+                                 WHERE u.project_id = p.id)"""
+            )
+        }
+        multi_snapshot = {
+            r["mod_id"] for r in conn.execute(
+                """SELECT mod_id FROM mod_snapshots
+                   GROUP BY mod_id HAVING COUNT(*) > 1"""
+            )
+        }
+        for row in rows:
+            if not row.has_loc or row.translates:
+                continue
+            needs_details = (
+                row.mod_id in with_units
+                or row.mod_id in multi_snapshot
+                or bool(row.provider_name)
+            )
+            if needs_details:
+                b = coverage_breakdown(
+                    conn, row.mod_id, self.source_lang, self.target_lang
+                )
+            else:
+                translated = int(round((row.coverage or 0) / 100 * row.source_keys))
+                b = Breakdown(total=row.source_keys, own=translated)
+            if not b.total:
+                continue
+            row.segments = b.segments()
+            row.coverage = b.percent
+            row.provider_total = b.provider_total or row.provider_total
+            row.provider_new = b.external or row.provider_new
+            if b.missing == 0:
+                row.state = (tr("переведён другим модом")
+                             if b.own == 0 and b.mine == 0 and b.external
+                             else tr("полный"))
+            else:
+                row.state = tr_format("{n} пропущено", n=b.missing)
 
     def _report_changes(self, conn, scan, old_id: int, new_id: int):
         from ck3loc.core.store import diff_snapshots

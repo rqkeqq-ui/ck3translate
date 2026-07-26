@@ -328,6 +328,163 @@ def effective_coverage(
     return cov
 
 
+def native_stale_keys(
+    conn: sqlite3.Connection,
+    mod_id: str,
+    source_lang: str,
+    target_lang: str,
+) -> set[str]:
+    """Ключи, где перевод самого мода отстал от исходного текста.
+
+    Своего отпечатка у чужого перевода нет, поэтому смотрим историю
+    снимков: исходная строка менялась позже, чем перевод, — значит,
+    перевод устарел. Отсчёт возможен только с первого снимка.
+    """
+    snaps = [
+        r["id"] for r in conn.execute(
+            "SELECT id FROM mod_snapshots WHERE mod_id=? ORDER BY id",
+            (mod_id,),
+        )
+    ]
+    if len(snaps) < 2:
+        return set()
+    last_src_change: dict[str, int] = {}
+    last_tgt_change: dict[str, int] = {}
+    prev_src: dict[str, str] = {}
+    prev_tgt: dict[str, str] = {}
+    for i, sid in enumerate(snaps):
+        src = {
+            r["key"]: r["value_hash"] for r in conn.execute(
+                """SELECT key, value_hash FROM snapshot_entries
+                   WHERE snapshot_id=? AND language=?""", (sid, source_lang))
+        }
+        tgt = {
+            r["key"]: r["value_hash"] for r in conn.execute(
+                """SELECT key, value_hash FROM snapshot_entries
+                   WHERE snapshot_id=? AND language=?""", (sid, target_lang))
+        }
+        for key, h in src.items():
+            if prev_src.get(key) != h:
+                last_src_change[key] = i
+        for key, h in tgt.items():
+            if prev_tgt.get(key) != h:
+                last_tgt_change[key] = i
+        prev_src, prev_tgt = src, tgt
+    return {
+        key for key in prev_tgt
+        if key in prev_src
+        and last_src_change.get(key, 0) > last_tgt_change.get(key, 0)
+    }
+
+
+@dataclass
+class Breakdown:
+    """Из чего складывается перевод мода. Части не пересекаются."""
+
+    total: int = 0        # ключей в исходном языке
+    own: int = 0          # перевёл автор мода
+    external: int = 0     # добавил мод-русификатор сверх авторского
+    mine: int = 0         # перевели вы в этой программе
+    stale: int = 0        # переведено, но исходный текст с тех пор изменился
+    provider_total: int = 0   # сколько всего покрывает русификатор
+
+    @property
+    def translated(self) -> int:
+        """Устаревшие строки в игре видны, поэтому считаются переведёнными."""
+        return self.own + self.external + self.mine + self.stale
+
+    @property
+    def missing(self) -> int:
+        return max(0, self.total - self.translated)
+
+    @property
+    def percent(self) -> float | None:
+        return None if not self.total else 100.0 * self.translated / self.total
+
+    def segments(self) -> list[tuple[str, int]]:
+        """[(вид, количество)] для полоски — в порядке отрисовки."""
+        return [
+            ("own", self.own),
+            ("external", self.external),
+            ("mine", self.mine),
+            ("stale", self.stale),
+            ("missing", self.missing),
+        ]
+
+
+def coverage_breakdown(
+    conn: sqlite3.Connection,
+    mod_id: str,
+    source_lang: str,
+    target_lang: str,
+) -> Breakdown:
+    """Разложить перевод мода по источникам.
+
+    Приоритет ключа: ваш перевод → русификатор → автор мода → не хватает.
+    """
+    from .scanner import semantic_hash
+
+    snaps = _latest_snapshots(conn)
+    sid = snaps.get(mod_id)
+    if sid is None:
+        return Breakdown()
+    src_rows = {
+        r["key"]: r["value"] for r in conn.execute(
+            """SELECT key, value FROM snapshot_entries
+               WHERE snapshot_id=? AND language=?""", (sid, source_lang))
+    }
+    if not src_rows:
+        return Breakdown()
+    src = set(src_rows)
+    native = _keys(conn, sid, target_lang) & src
+
+    # наши переводы из базы
+    project = conn.execute(
+        """SELECT id FROM translation_projects
+           WHERE mod_id=? AND source_lang=? AND target_lang=?""",
+        (mod_id, source_lang, target_lang),
+    ).fetchone()
+    mine: set[str] = set()
+    mine_stale: set[str] = set()
+    if project is not None:
+        for r in conn.execute(
+            """SELECT key, source_hash, target_text FROM translation_units
+               WHERE project_id=?""", (project["id"],)
+        ):
+            key = r["key"]
+            if key not in src or not (r["target_text"] or ""):
+                continue
+            if r["source_hash"] and r["source_hash"] != semantic_hash(src_rows[key]):
+                mine_stale.add(key)
+            else:
+                mine.add(key)
+
+    # мод-русификатор
+    external: set[str] = set()
+    provider_total = 0
+    row = get_provider(conn, mod_id, target_lang)
+    if row is not None:
+        psid = snaps.get(row["provider_mod_id"])
+        if psid is not None:
+            ext_keys = _keys(conn, psid, target_lang) & src
+            provider_total = len(ext_keys)
+            external = ext_keys - native - mine - mine_stale
+
+    # устаревший перевод самого мода
+    native_stale = native_stale_keys(conn, mod_id, source_lang, target_lang)
+    native_stale &= native - mine - mine_stale - external
+
+    own = native - mine - mine_stale - external - native_stale
+    return Breakdown(
+        total=len(src),
+        own=len(own),
+        external=len(external),
+        mine=len(mine),
+        stale=len(mine_stale) + len(native_stale),
+        provider_total=provider_total,
+    )
+
+
 def providers_index(
     conn: sqlite3.Connection, target_lang: str
 ) -> dict[str, str]:

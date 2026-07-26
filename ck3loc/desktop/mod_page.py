@@ -39,6 +39,8 @@ from ck3loc.core.store import set_project_option, upsert_unit
 from ck3loc.core.tokens import validate_translation
 from ck3loc.core.writer import apply_write_plan, build_write_plan, verify_outputs
 from ck3loc.core.xliff import import_xliff
+from ck3loc.core.external_translations import coverage_breakdown
+from ck3loc.desktop.coverage_bar import CoverageLegend, SegmentBar
 from ck3loc.desktop.theme import palette
 from ck3loc.desktop.widgets import (
     Card,
@@ -140,13 +142,13 @@ class ModPage(QWidget):
         self.coverage_caption = QLabel("покрытие перевода")
         self.coverage_caption.setProperty("role", "dim")
         cov_col.addWidget(self.coverage_caption)
-        self.coverage_bar = QProgressBar()
-        self.coverage_bar.setObjectName("Coverage")
-        self.coverage_bar.setTextVisible(False)
-        self.coverage_bar.setMaximum(100)
+        self.coverage_bar = SegmentBar(self.theme)
         cov_col.addWidget(self.coverage_bar)
         cov_row.addLayout(cov_col, stretch=1)
         body_col.addLayout(cov_row)
+
+        self.coverage_legend = CoverageLegend(self.theme)
+        body_col.addWidget(self.coverage_legend)
 
         self.status_chips = QLabel()
         self.status_chips.setWordWrap(True)
@@ -457,14 +459,15 @@ class ModPage(QWidget):
         self.title.setText(scan.name)
         src = ctx.project["source_lang"]
         tgt = ctx.project["target_lang"]
-        # процент считаем по тем же строкам, что показаны ниже статусами,
-        # чтобы цифры в карточке и в библиотеке не расходились
-        of = len(ctx.source_values)
-        translated = sum(
-            1 for r in ctx.rows
-            if r.status not in ("missing", "orphan", "extra")
-        )
-        percent = (100.0 * translated / of) if of else None
+        # разложение по источникам — единый расчёт с библиотекой
+        breakdown = coverage_breakdown(self.conn, self.mod_id, src, tgt)
+        if not breakdown.total:
+            # снимка ещё нет (мод открыт до первого сканирования) —
+            # считаем по статусам строк
+            breakdown = self._breakdown_from_rows(ctx)
+        of = breakdown.total
+        translated = breakdown.translated
+        percent = breakdown.percent
         langs = ", ".join(
             f"{l} ({s.key_count})" for l, s in sorted(scan.languages.items())
         )
@@ -482,18 +485,23 @@ class ModPage(QWidget):
         self.coverage_value.setStyleSheet(
             f"font-size: 28px; font-weight: 600; color: {color};"
         )
-        self.coverage_bar.setValue(int(percent or 0))
+        self.coverage_bar.set_segments(breakdown.segments())
+        self.coverage_legend.set_segments(breakdown.segments())
         self.coverage_caption.setText(
             f"перевод {src} → {tgt}"
             + (f" · {translated} из {of} строк, "
                f"не хватает {of - translated}" if of else "")
         )
+        # в метках показываем только то, чего нет в легенде полоски:
+        # осиротевшие, лишние, конфликты — иначе повтор одного и того же
+        special = ("orphan", "extra", "conflict", "edited_outside")
         chips = "   ".join(
             f"<span style='color:{status_color(s, self.theme)}'>■</span> "
-            f"{status_label(s)}: <b>{n}</b>"
-            for s, n in sorted(counts.items(), key=lambda kv: -kv[1])
+            f"{status_label(s)}: <b>{counts[s]}</b>"
+            for s in special if counts.get(s)
         )
-        self.status_chips.setText(chips or "—")
+        self.status_chips.setText(chips)
+        self.status_chips.setVisible(bool(chips))
         self.info.setText(
             f"<span style='color:{c['text_dim']}'>ID {scan.mod_id}  ·  "
             f"версия автора {d.version or '—'}  ·  "
@@ -513,6 +521,22 @@ class ModPage(QWidget):
         self._fill_diagnostics(scan)
         self._load_changes()
         self._load_cover()
+
+    def _breakdown_from_rows(self, ctx) -> "Breakdown":
+        """Запасной расчёт, пока снимок мода ещё не снят."""
+        from ck3loc.core.external_translations import Breakdown
+
+        counts: dict[str, int] = {}
+        for r in ctx.rows:
+            counts[r.status] = counts.get(r.status, 0) + 1
+        return Breakdown(
+            total=len(ctx.source_values),
+            own=counts.get("native", 0),
+            external=counts.get("external", 0),
+            mine=(counts.get("machine", 0) + counts.get("reviewed", 0)
+                  + counts.get("approved", 0)),
+            stale=counts.get("stale", 0) + counts.get("conflict", 0),
+        )
 
     def _fill_providers(self):
         """Показать мод-русификатор и дать выбрать другой, если кандидатов
@@ -545,9 +569,8 @@ class ModPage(QWidget):
         for c in cands:
             new_keys = self._provider_new_keys(c.provider_id, native)
             self.provider_combo.addItem(
-                f"{c.provider_name} — покрывает {c.covered_keys} строк, "
-                f"из них новых для этого мода: {new_keys} "
-                f"(уверенность {c.confidence})",
+                f"{c.provider_name} · покрывает {c.covered_keys}, "
+                f"новых {new_keys} · уверенность {c.confidence}",
                 c.provider_id,
             )
         self.provider_combo.addItem("не учитывать чужой перевод", "")
