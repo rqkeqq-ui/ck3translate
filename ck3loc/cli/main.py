@@ -310,9 +310,15 @@ def cmd_write(args: argparse.Namespace) -> int:
     if ctx is None:
         print(f"Мод {args.mod_id} не найден.")
         return 1
-    if args.mode:
+    if args.mode and args.mode != ctx.project["write_mode"]:
+        from ck3loc.core.writer import remove_outputs
+
+        removed = remove_outputs(conn, ctx.project_id, args.mod_id)
+        if removed:
+            print(f"Режим записи изменён: удалено файлов прежнего режима "
+                  f"{len(removed)} (резервные копии сохранены).")
         set_project_option(conn, ctx.project_id, "write_mode", args.mode)
-        ctx.project["write_mode"] = args.mode
+        ctx = load_project_context(conn, args.mod_id, args.source, args.target)
     plan = build_write_plan(ctx.scan, ctx.project, ctx.units, args.build)
     print(f"Режим записи: {plan.write_mode}, сборка: {plan.build_mode}")
     print(f"Файлов будет записано: {len(plan.files)}, ключей: {plan.total_keys}")

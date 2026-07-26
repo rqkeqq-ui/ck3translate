@@ -265,6 +265,44 @@ def apply_write_plan(
     return result
 
 
+def remove_outputs(conn, project_id: int, mod_id: str) -> list[Path]:
+    """Удалить все файлы, записанные приложением для проекта.
+
+    Удаляются ТОЛЬКО файлы из generated_outputs (созданные нами), каждый
+    предварительно копируется в резервные копии. Нужна при смене режима
+    записи (внутрь мода ↔ патч-мод), чтобы старый результат не остался
+    в игре вторым слоем.
+    """
+    import shutil
+
+    rows = conn.execute(
+        "SELECT DISTINCT abs_path FROM generated_outputs WHERE project_id=?",
+        (project_id,),
+    ).fetchall()
+    backup_root = backups_dir() / mod_id / "removed"
+    removed: list[Path] = []
+    for r in rows:
+        p = Path(r["abs_path"])
+        if p.exists():
+            backup_root.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(p, backup_root / p.name)
+            p.unlink()
+            removed.append(p)
+        # подчистить опустевшие каталоги (только внутри localization и патч-модов)
+        parent = p.parent
+        while parent.exists() and not any(parent.iterdir()):
+            try:
+                parent.rmdir()
+            except OSError:
+                break
+            parent = parent.parent
+    conn.execute(
+        "DELETE FROM generated_outputs WHERE project_id=?", (project_id,)
+    )
+    conn.commit()
+    return removed
+
+
 @dataclass
 class OutputCheck:
     path: Path

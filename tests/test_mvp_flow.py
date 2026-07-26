@@ -288,6 +288,46 @@ class TestPatchModMode(MvpTestCase):
         )
 
 
+class TestWriteModeSwitch(MvpTestCase):
+    def test_switch_to_patch_mod_cleans_in_mod_files(self):
+        """Смена режима записи убирает файлы прежнего режима (с бэкапом),
+        иначе перевод дублируется, а патч-мод собирается пустым."""
+        from ck3loc.core.store import set_project_option
+        from ck3loc.core.writer import remove_outputs
+
+        values = self.current_source_values()
+        for key in list(values)[:3]:
+            upsert_unit(
+                self.conn, self.pid, key, values[key],
+                semantic_hash(values[key]), "перевод " + key, MACHINE, "t",
+            )
+        self.conn.commit()
+        project = dict(get_project(self.conn, self.pid))
+        units = get_units(self.conn, self.pid)
+        plan = build_write_plan(self.scan, project, units)
+        apply_write_plan(self.conn, self.pid, plan, self.scan, units)
+        written = [p for p in
+                   (f.abs_path for f in plan.files) if p.exists()]
+        self.assertTrue(written)
+
+        removed = remove_outputs(self.conn, self.pid, self.scan.mod_id)
+        self.assertEqual(sorted(map(str, removed)), sorted(map(str, written)))
+        self.assertTrue(all(not p.exists() for p in written))
+
+        set_project_option(self.conn, self.pid, "write_mode", "patch_mod")
+        from ck3loc.core.scanner import scan_mod as rescan
+
+        fresh_scan = rescan(self.mod_dir)
+        project = dict(get_project(self.conn, self.pid))
+        units = get_units(self.conn, self.pid)
+        plan2 = build_write_plan(fresh_scan, project, units)
+        apply_write_plan(self.conn, self.pid, plan2, fresh_scan, units)
+        pdx = Path(os.environ["CK3LOC_PDX_MOD_DIR"])
+        self.assertTrue(
+            (pdx / f"ck3loc_{self.scan.mod_id}_russian" / "descriptor.mod").exists()
+        )
+
+
 class TestDeltaMode(MvpTestCase):
     def test_delta_skips_native_equal(self):
         # родной русский уже содержит ключ "холм" → дельта его не пишет,
