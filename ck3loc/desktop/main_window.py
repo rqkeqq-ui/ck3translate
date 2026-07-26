@@ -93,6 +93,7 @@ class MainWindow(QMainWindow):
         self.settings_page = SettingsPage(self.theme)
         self.settings_page.theme_changed.connect(self.apply_theme)
         self.settings_page.langs_changed.connect(self._langs_changed)
+        self.settings_page.ui_language_changed.connect(self.change_ui_language)
         for w in (self.library, self.mod_page, self.glossary, self.settings_page):
             self.stack.addWidget(w)
         # на карточке мода общий заголовок скрыт: название показывает сама
@@ -119,6 +120,7 @@ class MainWindow(QMainWindow):
 
         self._build_shortcuts()
         self.apply_theme(self.theme)
+        self.retranslate()
         self.worker: ScanWorker | None = None
         if self.cfg.get("scan_on_start", True):
             QTimer.singleShot(300, self.start_scan)
@@ -302,6 +304,21 @@ class MainWindow(QMainWindow):
 
     def _langs_changed(self):
         self.add_note("Языки изменены — пересканируйте библиотеку.")
+
+    def retranslate(self):
+        """Применить язык интерфейса ко всему окну."""
+        from ck3loc.desktop.translate_ui import translate_tree
+
+        translate_tree(self)
+        self.library.refresh_table()
+
+    def change_ui_language(self, code: str):
+        from ck3loc.core.i18n import set_language
+
+        set_language(code)
+        settings.set_value("ui_lang", code)
+        self.retranslate()
+        self.add_note("Язык программы изменён.")
 
     # ---------- уведомления ----------
 

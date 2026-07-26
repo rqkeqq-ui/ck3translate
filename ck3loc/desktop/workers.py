@@ -11,6 +11,8 @@ from pathlib import Path
 
 from PySide6.QtCore import QThread, Signal
 
+from ck3loc.core.i18n import tr, tr_format
+
 
 @dataclass
 class ModRow:
@@ -111,7 +113,7 @@ class ScanWorker(QThread):
                 )
                 if not scan.has_localization:
                     rows.append(ModRow(scan.mod_id, scan.name, 0, None,
-                                       "нет локализации", False, updated,
+                                       tr("нет локализации"), False, updated,
                                        errors, scan.mod_id in tracked,
                                        updated_ts=t_upd))
                     continue
@@ -122,14 +124,15 @@ class ScanWorker(QThread):
                 src = scan.best_source_language(self.source_lang) or self.source_lang
                 translated, of = scan.coverage(self.target_lang, src)
                 if of == 0:
-                    state, cov = f"нет языка {src}", None
+                    state = tr_format("нет языка {lang}", lang=src)
+                    cov = None
                 elif translated == 0:
-                    state, cov = "нет перевода", 0.0
+                    state, cov = tr("нет перевода"), 0.0
                 elif translated < of:
-                    state = f"{of - translated} пропущено"
+                    state = tr_format("{n} пропущено", n=of - translated)
                     cov = 100.0 * translated / of
                 else:
-                    state, cov = "полный", 100.0
+                    state, cov = tr("полный"), 100.0
                 rows.append(ModRow(scan.mod_id, scan.name, len(scan.languages),
                                    cov, state, True, updated, errors,
                                    scan.mod_id in tracked, source_keys=of,
@@ -186,16 +189,19 @@ class ScanWorker(QThread):
             if total:
                 row.coverage = min(100.0, 100.0 * covered / total)
                 left = max(0, total - covered)
-                row.state = ("переведён другим модом" if left == 0
-                             else f"чужой перевод, {left} пропущено")
+                row.state = (
+                    tr("переведён другим модом") if left == 0
+                    else tr_format("чужой перевод, {n} пропущено", n=left)
+                )
         for provider_id, targets in roles.items():
             row = by_id.get(provider_id)
             if row is not None:
                 row.translates = len(targets)
                 row.state = (
-                    f"русификатор для «{names.get(targets[0], targets[0])}»"
+                    tr_format("русификатор для «{name}»",
+                              name=names.get(targets[0], targets[0]))
                     if len(targets) == 1
-                    else f"русификатор для {len(targets)} модов"
+                    else tr_format("русификатор для {n} модов", n=len(targets))
                 )
                 row.coverage = None
         self.note.emit(
