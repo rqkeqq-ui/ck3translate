@@ -457,7 +457,13 @@ class ModPage(QWidget):
         self.title.setText(scan.name)
         src = ctx.project["source_lang"]
         tgt = ctx.project["target_lang"]
-        translated, of = scan.coverage(tgt, src)
+        # процент считаем по тем же строкам, что показаны ниже статусами,
+        # чтобы цифры в карточке и в библиотеке не расходились
+        of = len(ctx.source_values)
+        translated = sum(
+            1 for r in ctx.rows
+            if r.status not in ("missing", "orphan", "extra")
+        )
         percent = (100.0 * translated / of) if of else None
         langs = ", ".join(
             f"{l} ({s.key_count})" for l, s in sorted(scan.languages.items())
@@ -479,7 +485,8 @@ class ModPage(QWidget):
         self.coverage_bar.setValue(int(percent or 0))
         self.coverage_caption.setText(
             f"перевод {src} → {tgt}"
-            + (f" · {translated} из {of} строк" if of else "")
+            + (f" · {translated} из {of} строк, "
+               f"не хватает {of - translated}" if of else "")
         )
         chips = "   ".join(
             f"<span style='color:{status_color(s, self.theme)}'>■</span> "
@@ -530,12 +537,17 @@ class ModPage(QWidget):
             return
         current = (self.ctx.provider["provider_mod_id"]
                    if self.ctx.provider is not None else "")
+        # сколько строк русификатор реально добавляет сверх перевода мода —
+        # без этого «242 строки» вводят в заблуждение, когда мод переведён сам
+        native = set(self.ctx.native_values)
         self.provider_combo.blockSignals(True)
         self.provider_combo.clear()
         for c in cands:
+            new_keys = self._provider_new_keys(c.provider_id, native)
             self.provider_combo.addItem(
-                f"{c.provider_name} — {c.covered_keys} строк "
-                f"({c.ratio * 100:.0f}%, уверенность {c.confidence})",
+                f"{c.provider_name} — покрывает {c.covered_keys} строк, "
+                f"из них новых для этого мода: {new_keys} "
+                f"(уверенность {c.confidence})",
                 c.provider_id,
             )
         self.provider_combo.addItem("не учитывать чужой перевод", "")
@@ -543,6 +555,18 @@ class ModPage(QWidget):
         self.provider_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self.provider_combo.blockSignals(False)
         self.provider_row.show()
+
+    def _provider_new_keys(self, provider_id: str, native: set) -> int:
+        from ck3loc.core.external_translations import (
+            _keys,
+            _latest_snapshots,
+        )
+
+        sid = _latest_snapshots(self.conn).get(provider_id)
+        if sid is None:
+            return 0
+        keys = _keys(self.conn, sid, self.ctx.project["target_lang"])
+        return len((keys & set(self.ctx.source_values)) - native)
 
     def _change_provider(self):
         from ck3loc.core.external_translations import set_manual_choice
