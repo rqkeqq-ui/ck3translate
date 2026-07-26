@@ -40,7 +40,7 @@ from ck3loc.core.tokens import validate_translation
 from ck3loc.core.writer import apply_write_plan, build_write_plan, verify_outputs
 from ck3loc.core.xliff import import_xliff
 from ck3loc.core.external_translations import coverage_breakdown
-from ck3loc.desktop.coverage_bar import CoverageLegend, SegmentBar
+from ck3loc.desktop.coverage_bar import CoverageLegend, SegmentBar, format_percent
 from ck3loc.desktop.theme import palette
 from ck3loc.desktop.widgets import (
     Card,
@@ -476,9 +476,7 @@ class ModPage(QWidget):
             counts[r.status] = counts.get(r.status, 0) + 1
         c = palette(self.theme)
 
-        self.coverage_value.setText(
-            "—" if percent is None else f"{percent:.0f}%"
-        )
+        self.coverage_value.setText(format_percent(translated, of))
         color = (c["text_dim"] if percent is None else
                  c["ok"] if percent >= 100 else
                  c["err"] if percent == 0 else c["warn"])

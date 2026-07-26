@@ -37,6 +37,21 @@ def segment_color(kind: str, theme: str) -> QColor:
     return QColor(palette(theme)[key])
 
 
+def format_percent(translated: int, total: int) -> str:
+    """«100%» только когда переведено действительно всё, «0%» — когда ничего.
+
+    Иначе округление даёт «100%» рядом с «1 пропущено».
+    """
+    if not total:
+        return "—"
+    if translated >= total:
+        return "100%"
+    if translated <= 0:
+        return "0%"
+    percent = round(100.0 * translated / total)
+    return f"{min(99, max(1, percent))}%"
+
+
 def describe(segments: list[tuple[str, int]]) -> str:
     """Расшифровка словами — для подсказки и карточки мода."""
     parts = [

@@ -207,6 +207,38 @@ class TestLibraryPage(GuiTestCase):
         page._set_filter("Моды-русификаторы")
         self.assertEqual(page.table.rowCount(), 1)
 
+    def test_percent_never_lies_about_completeness(self):
+        """«100%» только при нуле пропущенных, «0%» — только когда ничего нет."""
+        from ck3loc.desktop.coverage_bar import format_percent
+
+        self.assertEqual(format_percent(605, 606), "99%")   # не «100%»
+        self.assertEqual(format_percent(606, 606), "100%")
+        self.assertEqual(format_percent(1, 5000), "1%")     # не «0%»
+        self.assertEqual(format_percent(0, 500), "0%")
+        self.assertEqual(format_percent(0, 0), "—")
+
+    def test_external_source_shown_at_any_percent(self):
+        """Источник перевода виден и когда переведено не до конца."""
+        from ck3loc.desktop.library_page import LibraryPage
+        from ck3loc.desktop.workers import ModRow
+
+        page = LibraryPage("dark")
+        page.set_rows([
+            ModRow("1", "Целиком чужой", 1, 51.0, "другой мод · 4181 пропущено",
+                   True, "", 0, False, provider_name="Русификация",
+                   segments=[("own", 0), ("external", 4296), ("mine", 0),
+                             ("stale", 0), ("missing", 4181)]),
+            ModRow("2", "Свой перевод", 1, 91.0, "31 пропущено", True, "", 0,
+                   False, provider_name="Русификация",
+                   segments=[("own", 298), ("external", 3), ("mine", 0),
+                             ("stale", 0), ("missing", 31)]),
+        ])
+        self.assertIn("другой мод", page.table.item(0, 4).text())
+        # у мода со своим переводом «другой мод» не пишем — вклад побочный
+        self.assertNotIn("другой мод", page.table.item(1, 4).text())
+        self.assertEqual(page.table.item(0, 3).text(), "51%")
+        self.assertEqual(page.table.item(1, 3).text(), "91%")
+
     def test_active_tile_follows_filter(self):
         from ck3loc.desktop.library_page import LibraryPage
 
