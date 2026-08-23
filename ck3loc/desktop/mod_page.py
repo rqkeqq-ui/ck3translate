@@ -540,6 +540,7 @@ class ModPage(QWidget):
         """Показать мод-русификатор и дать выбрать другой, если кандидатов
         несколько (бывает у сборников переводов)."""
         from ck3loc.core import settings
+        from ck3loc.core.community_db import discover_community_database
         from ck3loc.core.external_translations import find_provider_candidates
 
         cfg = settings.load()
@@ -547,11 +548,15 @@ class ModPage(QWidget):
             self.provider_row.hide()
             return
         target = self.ctx.project["target_lang"]
+        community = discover_community_database(
+            enabled=bool(cfg.get("community_db_enabled", True))
+        ).database
         cands = find_provider_candidates(
             self.conn, self.ctx.project["source_lang"], target,
             min_ratio=float(cfg.get("provider_min_ratio", 0.25)),
             min_keys=int(cfg.get("provider_min_keys", 30)),
             only_mod_id=self.mod_id,
+            registered_pairs=community.translations if community else (),
         ).get(self.mod_id, [])
         self._provider_candidates = cands
         if not cands:
@@ -880,7 +885,12 @@ class ModPage(QWidget):
             res = export_jsonl(
                 self.conn, self.ctx.project_id, rows, Path(path),
                 self.ctx.project["source_lang"], target,
-                glossary=load_glossary(self.conn, self.mod_id)[:60],
+                glossary=load_glossary(
+                    self.conn,
+                    self.mod_id,
+                    self.ctx.project["source_lang"],
+                    self.ctx.project["target_lang"],
+                )[:60],
             )
             self._log(
                 f"Выгружено строк: {res.unit_count}\n"

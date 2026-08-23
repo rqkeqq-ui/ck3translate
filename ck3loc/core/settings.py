@@ -27,6 +27,7 @@ DEFAULTS: dict = {
     "provider_detect": True,
     "provider_min_ratio": 0.25,
     "provider_min_keys": 30,
+    "community_db_enabled": True,
     "show_covers_in_list": False,
     "fetch_covers": True,          # загружать обложки модов из мастерской
     "ui_lang": "",                 # пусто — язык ещё не выбран (первый запуск)

@@ -79,6 +79,21 @@ class TestScanner(unittest.TestCase):
         scan = scan_mod(self.mod_dir)
         self.assertEqual(scan.best_source_language("english"), "english")
 
+    def test_community_rule_excludes_files_and_key_prefixes(self):
+        from ck3loc.core.community_db import ModRule
+
+        rule = ModRule(
+            self.mod_dir.name,
+            source_language="russian",
+            exclude_globs=("localization/english/sub/**",),
+            protected_key_prefixes=("rep",),
+        )
+        scan = scan_mod(self.mod_dir, rule=rule)
+        self.assertEqual(scan.source_language_hint, "russian")
+        self.assertNotIn("deep_key", scan.languages["english"].keys)
+        self.assertNotIn("rep1_key", scan.languages["english"].keys)
+        self.assertNotIn("rep2_key", scan.languages["english"].keys)
+
     def test_fingerprint_stable_under_reordering(self):
         scan1 = scan_mod(self.mod_dir)
         fp1 = localization_fingerprint(scan1)

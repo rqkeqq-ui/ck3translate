@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ck3loc.core import db
+from ck3loc.core import db, settings
 from ck3loc.core.glossary_seed import seed_glossary
 from ck3loc.desktop.widgets import align_headers, setup_table
 
@@ -32,13 +32,16 @@ class GlossaryPage(QWidget):
     def __init__(self, theme: str = "dark", parent=None):
         super().__init__(parent)
         self.conn = db.connect()
+        self.source_lang = settings.get("source_lang") or "english"
+        self.target_lang = settings.get("target_lang") or "russian"
         v = QVBoxLayout(self)
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(12)
 
         hint = QLabel(
             "Термины передаются переводчику как обязательные соответствия. "
-            "Глобальный уровень действует для всех модов."
+            "Глобальный уровень действует для всех модов. Показывается "
+            "текущая языковая пара из Настроек."
         )
         hint.setProperty("role", "dim")
         hint.setWordWrap(True)
@@ -67,7 +70,7 @@ class GlossaryPage(QWidget):
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self.refresh)
         tools.addWidget(self.search, stretch=1)
-        btn_seed = QPushButton("Загрузить стартовый словарь CK3")
+        btn_seed = QPushButton("Загрузить стартовый словарь EN→RU")
         btn_seed.clicked.connect(self._seed_clicked)
         tools.addWidget(btn_seed)
         btn_del = QPushButton("Удалить выбранное")
@@ -99,9 +102,14 @@ class GlossaryPage(QWidget):
         self.refresh()
 
     def refresh(self):
+        self.source_lang = settings.get("source_lang") or "english"
+        self.target_lang = settings.get("target_lang") or "russian"
         query = self.search.text().strip().lower()
         rows = self.conn.execute(
-            "SELECT * FROM glossary_terms ORDER BY level, source_term"
+            """SELECT * FROM glossary_terms
+               WHERE source_lang=? AND target_lang=?
+               ORDER BY level, source_term""",
+            (self.source_lang, self.target_lang),
         ).fetchall()
         rows = [
             r for r in rows
@@ -126,9 +134,13 @@ class GlossaryPage(QWidget):
             self.table.setItem(i, 3, lvl_item)
         self.table.blockSignals(False)
         total = self.conn.execute(
-            "SELECT COUNT(*) AS n FROM glossary_terms"
+            """SELECT COUNT(*) AS n FROM glossary_terms
+               WHERE source_lang=? AND target_lang=?""",
+            (self.source_lang, self.target_lang),
         ).fetchone()["n"]
-        self.count.setText(f"Терминов в глоссарии: {total}")
+        self.count.setText(
+            f"{self.source_lang} → {self.target_lang}: {total} терминов"
+        )
 
     def _on_edit(self, item):
         row = item.row()
@@ -139,7 +151,7 @@ class GlossaryPage(QWidget):
         if item.column() > 1:
             return
         self.conn.execute(
-            f"UPDATE glossary_terms SET {field}=? WHERE id=?",
+            f"UPDATE glossary_terms SET {field}=?, origin='user' WHERE id=?",
             (item.text(), term_id),
         )
         self.conn.commit()
@@ -151,9 +163,14 @@ class GlossaryPage(QWidget):
         if not src:
             return False
         self.conn.execute(
-            """INSERT INTO glossary_terms (level, source_term, target_term, mode)
-               VALUES ('global', ?, ?, ?)""",
-            (src, dst, self.mode.currentData()),
+            """INSERT INTO glossary_terms
+                   (level, source_lang, target_lang, source_term, target_term,
+                    mode, origin)
+               VALUES ('global', ?, ?, ?, ?, ?, 'user')""",
+            (
+                self.source_lang, self.target_lang, src, dst,
+                self.mode.currentData(),
+            ),
         )
         self.conn.commit()
         self.src.clear()

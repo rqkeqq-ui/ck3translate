@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import hashlib
+import fnmatch
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -87,6 +88,7 @@ class ModScan:
     files: list[FileScan] = field(default_factory=list)
     languages: dict[str, LanguageSummary] = field(default_factory=dict)
     diagnostics: list[tuple[str, Diagnostic]] = field(default_factory=list)
+    source_language_hint: str = ""
 
     @property
     def name(self) -> str:
@@ -163,7 +165,9 @@ def detect_lang_from_name(filename: str, known: list[str]) -> str | None:
 
 
 def scan_localization_tree(
-    mod_dir: Path, known_languages: list[str] | None = None
+    mod_dir: Path,
+    known_languages: list[str] | None = None,
+    exclude_globs: tuple[str, ...] = (),
 ) -> list[FileScan]:
     """Рекурсивно разобрать все .yml под localization/ папки мода."""
     known = known_languages or DEFAULT_LANGUAGES
@@ -174,13 +178,18 @@ def scan_localization_tree(
     for path in sorted(loc_root.rglob("*.yml")):
         if not path.is_file():
             continue
+        rel_path = str(path.relative_to(mod_dir)).replace("\\", "/")
+        if any(
+            fnmatch.fnmatchcase(rel_path.casefold(), pattern.casefold())
+            for pattern in exclude_globs
+        ):
+            continue
         try:
             data = path.read_bytes()
         except OSError:
             continue
         loc = LocFile.parse_bytes(data, path=path)
         rel_to_loc = path.relative_to(loc_root)
-        rel_path = str(path.relative_to(mod_dir)).replace("\\", "/")
         path_lang, replace_scope = detect_langs_from_path(
             rel_to_loc.parts[:-1], known
         )
@@ -234,14 +243,23 @@ def scan_localization_tree(
     return result
 
 
-def scan_mod(mod_dir: Path, known_languages: list[str] | None = None) -> ModScan:
+def scan_mod(
+    mod_dir: Path,
+    known_languages: list[str] | None = None,
+    rule=None,
+) -> ModScan:
     mod_dir = Path(mod_dir)
     scan = ModScan(
         mod_id=mod_dir.name,
         mod_dir=mod_dir,
         descriptor=Descriptor.load(mod_dir),
+        source_language_hint=(getattr(rule, "source_language", "") if rule else ""),
     )
-    scan.files = scan_localization_tree(mod_dir, known_languages)
+    excludes = tuple(getattr(rule, "exclude_globs", ())) if rule else ()
+    ignored_prefixes = tuple(
+        getattr(rule, "protected_key_prefixes", ())
+    ) if rule else ()
+    scan.files = scan_localization_tree(mod_dir, known_languages, excludes)
     for fs in scan.files:
         for d in fs.diagnostics:
             scan.diagnostics.append((fs.rel_path, d))
@@ -251,6 +269,8 @@ def scan_mod(mod_dir: Path, known_languages: list[str] | None = None) -> ModScan
         summary = scan.languages.setdefault(lang, LanguageSummary(language=lang))
         summary.file_count += 1
         for occ in fs.occurrences:
+            if ignored_prefixes and occ.key.startswith(ignored_prefixes):
+                continue
             if occ.key in summary.keys:
                 # replace-файлы законно переопределяют ключи; настоящие
                 # дубликаты внутри одного скоупа уже отмечены парсером

@@ -69,10 +69,29 @@ def load_project_context(
         mod_dir = find_mod_dir(mod_id, steam_path)
     if mod_dir is None:
         return None
-    scan = scan_mod(mod_dir, game_languages())
+    from . import settings
+    from .community_db import discover_community_database
+
+    cfg = settings.load()
+    community_result = discover_community_database(
+        steam_path, enabled=bool(cfg.get("community_db_enabled", True))
+    )
+    community = community_result.database
+    if community_result.state == "ready" and community is not None:
+        from .community_db import import_community_glossary
+
+        import_community_glossary(conn, community)
+    rule = community.mod_rules.get(mod_id) if community else None
+    scan = scan_mod(mod_dir, game_languages(), rule=rule)
     # авто-подсказка источника: самый полный язык
-    best = scan.best_source_language(source_lang)
-    if best and best != source_lang and source_lang not in scan.languages:
+    best = (
+        scan.source_language_hint
+        if scan.source_language_hint in scan.languages
+        else scan.best_source_language(source_lang)
+    )
+    if scan.source_language_hint in scan.languages:
+        source_lang = scan.source_language_hint
+    elif best and best != source_lang and source_lang not in scan.languages:
         source_lang = best
     pid = ensure_project(conn, mod_id, source_lang, target_lang)
     project = dict(get_project(conn, pid))

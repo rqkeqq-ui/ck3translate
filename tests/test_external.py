@@ -104,6 +104,27 @@ class TestDetection(ExternalTestCase):
         )
         self.assertNotIn("1000", cands2)
 
+    def test_community_registry_can_confirm_small_installed_translation(self):
+        from ck3loc.core.community_db import RegisteredTranslation
+
+        small = make_mod(
+            self.workshop, "4000", "Small verified translation", "russian",
+            [("gm_key_0", "Один"), ("gm_key_1", "Два")],
+        )
+        scan = scan_mod(small)
+        record_mod(self.conn, scan)
+        take_snapshot(self.conn, scan)
+        pairs = [
+            RegisteredTranslation("1000", "4000", "english", "russian")
+        ]
+        cands = find_provider_candidates(
+            self.conn, "english", "russian", min_keys=30,
+            registered_pairs=pairs,
+        )
+        verified = next(c for c in cands["1000"] if c.provider_id == "4000")
+        self.assertTrue(verified.by_registry)
+        self.assertEqual(verified.covered_keys, 2)
+
     def test_dependencies_parsed(self):
         self.assertEqual(read_dependencies(self.rus), ["Great Mod"])
         self.assertEqual(read_dependencies(self.orig), [])

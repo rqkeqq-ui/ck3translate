@@ -88,7 +88,7 @@ def translate_rows(
     vl = vanilla_lookup if vanilla_lookup is not None else build_vanilla_lookup(
         source_lang, target_lang
     )
-    glossary = load_glossary(ctx.conn, mod_id)
+    glossary = load_glossary(ctx.conn, mod_id, source_lang, target_lang)
 
     def save(key: str, source_text: str, target_text: str, origin: str):
         upsert_unit(

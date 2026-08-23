@@ -78,34 +78,50 @@ SEED_EN_RU: list[tuple[str, str, str]] = [
 
 
 def seed_glossary(conn) -> int:
-    """Заполнить глобальный глоссарий, если он пуст. Возвращает число терминов."""
-    row = conn.execute(
-        "SELECT COUNT(*) AS n FROM glossary_terms WHERE level='global'"
-    ).fetchone()
-    if row["n"] > 0:
-        return 0
-    conn.executemany(
-        """INSERT INTO glossary_terms (level, source_term, target_term, mode)
-           VALUES ('global', ?, ?, ?)""",
-        SEED_EN_RU,
-    )
+    """Добавить отсутствующие стартовые EN→RU термины без перезаписи своих."""
+    added = 0
+    for source, target, mode in SEED_EN_RU:
+        exists = conn.execute(
+            """SELECT 1 FROM glossary_terms
+               WHERE level='global' AND source_lang='english'
+                 AND target_lang='russian' AND source_term=? LIMIT 1""",
+            (source,),
+        ).fetchone()
+        if exists:
+            continue
+        conn.execute(
+            """INSERT INTO glossary_terms
+                   (level, source_lang, target_lang, source_term, target_term,
+                    mode, origin)
+               VALUES ('global', 'english', 'russian', ?, ?, ?, 'builtin')""",
+            (source, target, mode),
+        )
+        added += 1
     conn.commit()
-    return len(SEED_EN_RU)
+    return added
 
 
-def load_glossary(conn, mod_id: str = "") -> list[tuple[str, str]]:
+def load_glossary(
+    conn,
+    mod_id: str = "",
+    source_lang: str = "english",
+    target_lang: str = "russian",
+) -> list[tuple[str, str]]:
     """Глоссарий для перевода: глобальный + уровня мода (мод переопределяет)."""
     terms: dict[str, str] = {}
     for r in conn.execute(
         "SELECT source_term, target_term FROM glossary_terms "
-        "WHERE level='global' AND mode != 'forbidden'"
+        "WHERE level='global' AND source_lang=? AND target_lang=? "
+        "AND mode != 'forbidden' ORDER BY id",
+        (source_lang, target_lang),
     ):
         terms[r["source_term"]] = r["target_term"]
     if mod_id:
         for r in conn.execute(
             "SELECT source_term, target_term FROM glossary_terms "
-            "WHERE level='mod' AND mod_id=? AND mode != 'forbidden'",
-            (mod_id,),
+            "WHERE level='mod' AND mod_id=? AND source_lang=? AND target_lang=? "
+            "AND mode != 'forbidden' ORDER BY id",
+            (mod_id, source_lang, target_lang),
         ):
             terms[r["source_term"]] = r["target_term"]
     return sorted(terms.items())

@@ -31,6 +31,7 @@ class ModRow:
     updated_ts: int = 0          # для сортировки по дате обновления
     provider_new: int = 0        # строк, которые добавляет русификатор
     provider_total: int = 0      # всего покрывает русификатор
+    source_lang: str = ""       # фактический источник с учётом Community rules
     # из чего складывается перевод: [(вид, количество)] для полоски
     segments: list = field(default_factory=list)
 
@@ -56,7 +57,12 @@ class ScanWorker(QThread):
     def run(self):
         import datetime
 
-        from ck3loc.core import db
+        from ck3loc.core import db, settings
+        from ck3loc.core.community_db import (
+            clear_community_glossary,
+            discover_community_database,
+            import_community_glossary,
+        )
         from ck3loc.core.scanner import scan_mod
         from ck3loc.core.steam import (
             find_steam_root,
@@ -89,7 +95,44 @@ class ScanWorker(QThread):
                 )
                 self.finished_rows.emit([])
                 return
+            cfg = settings.load()
+            community_result = discover_community_database(
+                root, enabled=bool(cfg.get("community_db_enabled", True))
+            )
+            self._community_translations = []
+            community = None
+            community_root = None
+            if community_result.database is not None:
+                community_root = community_result.database.root.resolve()
+            if community_result.state == "ready" and community_result.database:
+                community = community_result.database
+                imported = import_community_glossary(conn, community)
+                self._community_translations = community.translations
+                self.note.emit(
+                    f"Community Database {community.database_version}: "
+                    f"глоссарий +{imported.added}/~{imported.updated}, "
+                    f"связей русификаторов {len(community.translations)}."
+                )
+            elif community_result.state == "incompatible" and community_result.database:
+                self.note.emit(
+                    "Community Database требует версию приложения не ниже "
+                    f"{community_result.database.minimum_app_version}."
+                )
+            elif community_result.state == "invalid":
+                self.note.emit(
+                    "Community Database повреждена и отключена: "
+                    + "; ".join(community_result.errors[:2])
+                )
+            elif community_result.state == "downloading":
+                self.note.emit("Steam ещё загружает Community Database.")
+            elif community_result.state in {
+                "disabled", "missing", "invalid", "incompatible"
+            }:
+                clear_community_glossary(conn)
+
             mod_dirs = list_workshop_mod_dirs(content)
+            if community_root is not None:
+                mod_dirs = [d for d in mod_dirs if d.resolve() != community_root]
             langs = game_languages()
             acf = read_workshop_acf(root)
             tracked = {
@@ -103,7 +146,8 @@ class ScanWorker(QThread):
             for i, mod_dir in enumerate(mod_dirs, start=1):
                 if self._stop:
                     break
-                scan = scan_mod(mod_dir, langs)
+                rule = community.mod_rules.get(mod_dir.name) if community else None
+                scan = scan_mod(mod_dir, langs, rule=rule)
                 self.progress.emit(i, total, scan.name)
                 entry = acf.get(scan.mod_id)
                 t_upd = int(entry.time_updated) if entry and entry.time_updated else 0
@@ -125,7 +169,10 @@ class ScanWorker(QThread):
                 snap = take_snapshot(conn, scan, steam_time_updated=t_upd)
                 if snap.is_new and prev is not None:
                     self._report_changes(conn, scan, prev["id"], snap.snapshot_id)
-                src = scan.best_source_language(self.source_lang) or self.source_lang
+                if scan.source_language_hint in scan.languages:
+                    src = scan.source_language_hint
+                else:
+                    src = scan.best_source_language(self.source_lang) or self.source_lang
                 translated, of = scan.coverage(self.target_lang, src)
                 if of == 0:
                     state = tr_format("нет языка {lang}", lang=src)
@@ -140,7 +187,7 @@ class ScanWorker(QThread):
                 rows.append(ModRow(scan.mod_id, scan.name, len(scan.languages),
                                    cov, state, True, updated, errors,
                                    scan.mod_id in tracked, source_keys=of,
-                                   updated_ts=t_upd))
+                                   updated_ts=t_upd, source_lang=src))
             gone = mark_missing_mods(conn, {d.name for d in mod_dirs})
             for g in gone:
                 self.note.emit(
@@ -171,11 +218,18 @@ class ScanWorker(QThread):
         if not cfg.get("provider_detect", True):
             return
         self.progress.emit(0, 1, "Ищу моды-русификаторы…")
-        candidates = find_provider_candidates(
-            conn, self.source_lang, self.target_lang,
-            min_ratio=float(cfg.get("provider_min_ratio", 0.25)),
-            min_keys=int(cfg.get("provider_min_keys", 30)),
-        )
+        candidates = {}
+        source_by_mod = {row.mod_id: row.source_lang for row in rows}
+        for source_lang in sorted({v for v in source_by_mod.values() if v}):
+            found = find_provider_candidates(
+                conn, source_lang, self.target_lang,
+                min_ratio=float(cfg.get("provider_min_ratio", 0.25)),
+                min_keys=int(cfg.get("provider_min_keys", 30)),
+                registered_pairs=getattr(self, "_community_translations", ()),
+            )
+            for mod_id, items in found.items():
+                if source_by_mod.get(mod_id) == source_lang:
+                    candidates[mod_id] = items
         save_candidates(conn, self.target_lang, candidates)
         index = providers_index(conn, self.target_lang)
         roles = provider_roles(conn, self.target_lang)
@@ -193,7 +247,8 @@ class ScanWorker(QThread):
             # покрытие считаем по объединению: свой перевод мода плюс то,
             # что добавляет русификатор — иначе число занижается
             cov = effective_coverage(
-                conn, mod_id, self.source_lang, self.target_lang
+                conn, mod_id, row.source_lang or self.source_lang,
+                self.target_lang,
             )
             if not cov.total:
                 continue
@@ -252,7 +307,8 @@ class ScanWorker(QThread):
             )
             if needs_details:
                 b = coverage_breakdown(
-                    conn, row.mod_id, self.source_lang, self.target_lang
+                    conn, row.mod_id, row.source_lang or self.source_lang,
+                    self.target_lang,
                 )
             else:
                 translated = int(round((row.coverage or 0) / 100 * row.source_keys))
@@ -365,7 +421,8 @@ class BatchWorker(QThread):
         self._stop = True
 
     def run(self):
-        from ck3loc.core import db
+        from ck3loc.core import db, settings
+        from ck3loc.core.community_db import discover_community_database
         from ck3loc.core.glossary_seed import seed_glossary
         from ck3loc.core.ops import load_project_context, rows_to_translate
         from ck3loc.core.pipeline import build_vanilla_lookup, translate_rows
@@ -380,19 +437,35 @@ class BatchWorker(QThread):
             seed_glossary(conn)
             provider = make_provider(self.provider_name)
             langs = game_languages()
+            cfg = settings.load()
+            community_result = discover_community_database(
+                enabled=bool(cfg.get("community_db_enabled", True))
+            )
+            community = (
+                community_result.database
+                if community_result.state == "ready" else None
+            )
             queue = []
             for mod_dir in list_workshop_mod_dirs(workshop_content_dirs()):
-                scan = scan_mod(mod_dir, langs)
+                if community and mod_dir.resolve() == community.root.resolve():
+                    continue
+                rule = community.mod_rules.get(mod_dir.name) if community else None
+                scan = scan_mod(mod_dir, langs, rule=rule)
                 if not scan.has_localization:
                     continue
-                src = scan.best_source_language(self.source_lang) or self.source_lang
+                src = (
+                    scan.source_language_hint
+                    if scan.source_language_hint in scan.languages
+                    else scan.best_source_language(self.source_lang)
+                    or self.source_lang
+                )
                 translated, of = scan.coverage(self.target_lang, src)
                 if of > 0 and translated == 0:
                     queue.append(mod_dir)
             if self.limit:
                 queue = queue[: self.limit]
             self.line.emit(f"Модов без перевода: {len(queue)}")
-            vl = build_vanilla_lookup(self.source_lang, self.target_lang)
+            vanilla_cache = {}
             for i, mod_dir in enumerate(queue, start=1):
                 if self._stop:
                     self.line.emit("Остановлено пользователем.")
@@ -400,9 +473,17 @@ class BatchWorker(QThread):
                 self.progress.emit(i, len(queue))
                 ctx = load_project_context(conn, mod_dir.name, self.source_lang,
                                            self.target_lang, mod_dir=mod_dir)
+                if ctx is None:
+                    self.line.emit(f"[{i}/{len(queue)}] мод больше не установлен")
+                    continue
                 rows = rows_to_translate(ctx, "missing")
                 self.line.emit(f"[{i}/{len(queue)}] {ctx.scan.name}: {len(rows)} строк")
-                stats = translate_rows(ctx, rows, provider, vanilla_lookup=vl)
+                pair = (ctx.project["source_lang"], ctx.project["target_lang"])
+                if pair not in vanilla_cache:
+                    vanilla_cache[pair] = build_vanilla_lookup(*pair)
+                stats = translate_rows(
+                    ctx, rows, provider, vanilla_lookup=vanilla_cache[pair]
+                )
                 self.line.emit(
                     f"     ваниль {stats.from_vanilla} · память {stats.from_memory} "
                     f"· API {stats.from_api} · ошибок {len(stats.failed)}"
