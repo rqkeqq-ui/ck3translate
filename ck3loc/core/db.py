@@ -10,7 +10,7 @@ import os
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -87,10 +87,13 @@ CREATE TABLE IF NOT EXISTS glossary_terms (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     level TEXT DEFAULT 'global',           -- global | mod | project
     mod_id TEXT DEFAULT '',
+    source_lang TEXT DEFAULT 'english',
+    target_lang TEXT DEFAULT 'russian',
     source_term TEXT NOT NULL,
     target_term TEXT DEFAULT '',
     mode TEXT DEFAULT 'preferred',         -- required | preferred | forbidden
-    note TEXT DEFAULT ''
+    note TEXT DEFAULT '',
+    origin TEXT DEFAULT 'user'             -- user | builtin | community:<id>
 );
 CREATE TABLE IF NOT EXISTS generated_outputs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -128,6 +131,31 @@ CREATE TABLE IF NOT EXISTS export_units (
 """
 
 
+def _ensure_column(
+    conn: sqlite3.Connection, table: str, name: str, declaration: str
+) -> None:
+    """Добавить колонку старой базе без потери пользовательских данных."""
+    columns = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+    if name not in columns:
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {declaration}")
+
+
+def _migrate(conn: sqlite3.Connection) -> None:
+    # v3: язык и происхождение терминов нужны для подписных глоссариев.
+    _ensure_column(
+        conn, "glossary_terms", "source_lang", "TEXT DEFAULT 'english'"
+    )
+    _ensure_column(
+        conn, "glossary_terms", "target_lang", "TEXT DEFAULT 'russian'"
+    )
+    _ensure_column(conn, "glossary_terms", "origin", "TEXT DEFAULT 'user'")
+    conn.execute(
+        """INSERT INTO meta(key, value) VALUES ('schema_version', ?)
+           ON CONFLICT(key) DO UPDATE SET value=excluded.value""",
+        (str(SCHEMA_VERSION),),
+    )
+
+
 def data_dir() -> Path:
     override = os.environ.get("CK3LOC_DATA")
     if override:
@@ -152,12 +180,6 @@ def connect(db_path: Path | None = None) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
     conn.executescript(SCHEMA)
-    cur = conn.execute("SELECT value FROM meta WHERE key='schema_version'")
-    row = cur.fetchone()
-    if row is None:
-        conn.execute(
-            "INSERT INTO meta(key, value) VALUES ('schema_version', ?)",
-            (str(SCHEMA_VERSION),),
-        )
-        conn.commit()
+    _migrate(conn)
+    conn.commit()
     return conn

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import webbrowser
 from pathlib import Path
 
 from PySide6.QtCore import Signal
@@ -24,6 +25,11 @@ from PySide6.QtWidgets import (
 )
 
 from ck3loc.core import settings
+from ck3loc.core.community_db import (
+    configured_repository_url,
+    discover_community_database,
+    workshop_page_url,
+)
 from ck3loc.core.db import backups_dir, data_dir
 from ck3loc.core.i18n import DEFAULT_UI_LANG, available_languages
 from ck3loc.core.vanilla import find_ck3_game_dir, game_languages
@@ -133,6 +139,38 @@ class SettingsPage(QWidget):
             "Порог: минимум строк", self.min_keys,
             "Ниже этого числа совпадений связь считается случайной."))
         v.addWidget(prov)
+
+        # --- подписная база сообщества ---
+        community_card = Card("CK3Loc Community Database")
+        community_note = QLabel(
+            "Необязательная подписка Steam Workshop доставляет глоссарии, "
+            "проверенные связи оригинальных модов с русификаторами и правила "
+            "обработки отдельных модов. Включать её в плейсет не нужно."
+        )
+        community_note.setProperty("role", "dim")
+        community_note.setWordWrap(True)
+        community_card.add(community_note)
+        self.community_enabled = QCheckBox("Использовать Community Database")
+        self.community_enabled.setChecked(
+            bool(cfg.get("community_db_enabled", True))
+        )
+        self.community_enabled.toggled.connect(self._community_toggled)
+        community_card.add(self.community_enabled)
+        community_row = QWidget()
+        cr = QHBoxLayout(community_row)
+        cr.setContentsMargins(0, 0, 0, 0)
+        self.community_status = QLabel()
+        self.community_status.setProperty("role", "dim")
+        self.community_status.setWordWrap(True)
+        cr.addWidget(self.community_status, stretch=1)
+        self.community_open = QPushButton("Открыть в Workshop")
+        self.community_open.clicked.connect(self._open_community_page)
+        cr.addWidget(self.community_open)
+        refresh_community = QPushButton("Проверить")
+        refresh_community.clicked.connect(self._refresh_community_db)
+        cr.addWidget(refresh_community)
+        community_card.add(community_row)
+        v.addWidget(community_card)
 
         # --- провайдеры ---
         keys_card = Card("Ключи API переводчиков")
@@ -289,6 +327,7 @@ class SettingsPage(QWidget):
         v.addStretch(1)
 
         self._refresh_keys()
+        self._refresh_community_db()
 
     # ---------- обработчики ----------
 
@@ -316,6 +355,51 @@ class SettingsPage(QWidget):
     def _clear_key(self, name: str):
         set_api_key(name, "")
         self._refresh_keys()
+
+    def _community_toggled(self, enabled: bool):
+        settings.set_value("community_db_enabled", enabled)
+        self._refresh_community_db()
+
+    def _refresh_community_db(self):
+        result = discover_community_database(
+            enabled=self.community_enabled.isChecked()
+        )
+        database = result.database
+        if result.state == "ready" and database is not None:
+            self.community_status.setText(
+                f"Подключена версия {database.database_version} · "
+                f"терминов {len(database.glossaries)} · "
+                f"связей {len(database.translations)}"
+            )
+        elif result.state == "incompatible" and database is not None:
+            self.community_status.setText(
+                "Нужно обновить приложение до версии "
+                f"{database.minimum_app_version} или новее."
+            )
+        elif result.state == "invalid":
+            detail = result.errors[0] if result.errors else "ошибка формата"
+            self.community_status.setText(f"База повреждена: {detail}")
+        elif result.state == "downloading":
+            self.community_status.setText("Подписка найдена, Steam ещё загружает файлы.")
+        elif result.state == "disabled":
+            self.community_status.setText("Отключена в настройках.")
+        elif result.workshop_id:
+            self.community_status.setText("Не установлена или нет подписки.")
+        else:
+            self.community_status.setText(
+                "Workshop ID ещё не указан автором сборки."
+            )
+        item_id = database.workshop_id if database else result.workshop_id
+        self.community_open.setEnabled(bool(workshop_page_url(item_id)))
+
+    def _open_community_page(self):
+        result = discover_community_database(
+            enabled=self.community_enabled.isChecked()
+        )
+        item_id = result.database.workshop_id if result.database else result.workshop_id
+        url = workshop_page_url(item_id) or configured_repository_url()
+        if url:
+            webbrowser.open(url)
 
     def _pick_steam(self):
         path = QFileDialog.getExistingDirectory(self, "Папка Steam")

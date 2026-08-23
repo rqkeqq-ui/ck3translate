@@ -60,6 +60,7 @@ class ProviderCandidate:
     source_keys: int
     by_dependency: bool = False
     by_name: bool = False
+    by_registry: bool = False
 
     @property
     def ratio(self) -> float:
@@ -67,7 +68,7 @@ class ProviderCandidate:
 
     @property
     def confidence(self) -> str:
-        if self.by_dependency or self.ratio >= 0.8:
+        if self.by_registry or self.by_dependency or self.ratio >= 0.8:
             return "высокая"
         if self.ratio >= 0.5 or self.by_name:
             return "средняя"
@@ -99,6 +100,7 @@ def find_provider_candidates(
     min_keys: int = DEFAULT_MIN_KEYS,
     progress_cb=None,
     only_mod_id: str | None = None,
+    registered_pairs=(),
 ) -> dict[str, list[ProviderCandidate]]:
     """Для каждого мода — список модов, которые его переводят.
 
@@ -128,20 +130,35 @@ def find_provider_candidates(
         ).fetchall()
         lang_counts[mod_id] = {r["language"]: r["n"] for r in rows}
 
-    candidates = [
+    auto_candidates = [
         mod_id for mod_id, langs in lang_counts.items()
         if langs.get(target_lang, 0) >= min_keys and not langs.get(source_lang)
     ]
-    if not candidates:
-        return {}
+
+    def pair_value(pair, name: str) -> str:
+        if isinstance(pair, dict):
+            return str(pair.get(name, ""))
+        return str(getattr(pair, name, ""))
+
+    registered = [
+        pair for pair in registered_pairs
+        if pair_value(pair, "source_lang") == source_lang
+        and pair_value(pair, "target_lang") == target_lang
+        and pair_value(pair, "source_mod_id") in snaps
+        and pair_value(pair, "provider_mod_id") in snaps
+    ]
+    registered_provider_ids = {
+        pair_value(pair, "provider_mod_id") for pair in registered
+    }
+    provider_ids = set(auto_candidates) | registered_provider_ids
 
     provider_keys = {
-        mod_id: _keys(conn, snaps[mod_id], target_lang) for mod_id in candidates
+        mod_id: _keys(conn, snaps[mod_id], target_lang) for mod_id in provider_ids
     }
     # имена оригиналов, объявленные в dependencies
     provider_deps = {
         mod_id: {d.strip().lower() for d in read_dependencies(Path(dirs.get(mod_id, "")))}
-        for mod_id in candidates
+        for mod_id in auto_candidates
     }
 
     result: dict[str, list[ProviderCandidate]] = {}
@@ -158,7 +175,7 @@ def find_provider_candidates(
             continue
         mod_name = (names.get(mod_id) or "").strip().lower()
         found: list[ProviderCandidate] = []
-        for provider_id in candidates:
+        for provider_id in auto_candidates:
             if provider_id == mod_id:
                 continue
             covered = len(src_keys & provider_keys[provider_id])
@@ -180,8 +197,42 @@ def find_provider_candidates(
                     ),
                 )
             )
+        # Запись сообщества снимает эвристические пороги, но не подменяет
+        # факты: оба мода должны быть установлены и реально иметь общие ключи.
+        for pair in registered:
+            if pair_value(pair, "source_mod_id") != mod_id:
+                continue
+            provider_id = pair_value(pair, "provider_mod_id")
+            if provider_id == mod_id:
+                continue
+            covered = len(src_keys & provider_keys.get(provider_id, set()))
+            if covered == 0:
+                continue
+            existing = next(
+                (item for item in found if item.provider_id == provider_id), None
+            )
+            if existing is not None:
+                existing.by_registry = True
+                continue
+            found.append(
+                ProviderCandidate(
+                    provider_id=provider_id,
+                    provider_name=names.get(provider_id, provider_id),
+                    covered_keys=covered,
+                    source_keys=len(src_keys),
+                    by_name=looks_like_translation_name(
+                        names.get(provider_id, "")
+                    ),
+                    by_registry=True,
+                )
+            )
         if found:
-            found.sort(key=lambda c: (c.by_dependency, c.covered_keys), reverse=True)
+            found.sort(
+                key=lambda c: (
+                    c.by_registry, c.by_dependency, c.covered_keys
+                ),
+                reverse=True,
+            )
             result[mod_id] = found
     return result
 

@@ -195,6 +195,8 @@ class MainWindow(QMainWindow):
         self.stack.setCurrentIndex(index)
         self.page_title.setText(titles[key])
         self.page_title.setVisible(True)
+        if key == "glossary":
+            self.glossary.refresh()
         for i, (_t, k) in enumerate(NAV):
             self.nav_group.button(i).setChecked(k == key)
 
