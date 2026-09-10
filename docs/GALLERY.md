@@ -9,3 +9,5 @@
 5. **Ваш привычный AI-чат / Use your preferred AI chat** — [05-export.png](images/05-export.png). Выбор объёма и формата задания.
 
 Подпись к галерее: «Интерфейс CK3 Localization Manager. Демонстрационные данные; приложение скачивается отдельно с GitHub».
+
+Обложка базы: [thumbnail.png](../workshop/ck3loc_community_database/thumbnail.png), 1024×1024; [редактируемый SVG](images/community-cover.svg).
