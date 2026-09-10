@@ -28,6 +28,7 @@ def _excepthook(exc_type, exc, tb):
 
 
 def main() -> int:
+    from PySide6.QtCore import QTimer
     from PySide6.QtWidgets import QApplication
 
     from ck3loc.core import settings
@@ -43,11 +44,14 @@ def main() -> int:
     sys.excepthook = _excepthook
 
     set_language(settings.get("ui_lang") or DEFAULT_UI_LANG)
-    if not settings.get("ui_lang"):
+    smoke_test = "--smoke-test" in sys.argv
+    if not settings.get("ui_lang") and not smoke_test:
         _first_run(app)
 
     win = MainWindow()
     win.show()
+    if smoke_test:
+        QTimer.singleShot(1000, win.close)
     return app.exec()
 
 

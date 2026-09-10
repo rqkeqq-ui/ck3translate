@@ -49,6 +49,10 @@ def find_steam_root(override: Path | None = None) -> Path | None:
     for cand in (
         Path(r"C:\Program Files (x86)\Steam"),
         Path(r"C:\Program Files\Steam"),
+        Path.home() / ".local/share/Steam",
+        Path.home() / ".steam/steam",
+        Path.home() / ".var/app/com.valvesoftware.Steam/.local/share/Steam",
+        Path.home() / "Library/Application Support/Steam",
     ):
         if cand.exists():
             return cand

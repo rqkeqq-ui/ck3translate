@@ -1,0 +1,84 @@
+CK3 Localization Manager — Community Database
+
+Больше историй на вашем языке.
+
+Это база сообщества для CK3 Localization Manager — отдельного приложения для перевода и восстановления локализаций модов Crusader Kings III.
+
+[b]ВАЖНО: базу НЕ нужно включать в активный набор модификаций (playset).[/b] Она содержит только данные для приложения и не меняет игру. Подписка не устанавливает программу.
+
+[h2]ЧТО ВНУТРИ[/h2]
+Первый выпуск содержит стартовый глоссарий из 12 терминов EN → RU. База поддерживает связи оригинальных модов с отдельными русификаторами и правила обработки локализаций; эти разделы пока пусты и будут пополняться по проверенным предложениям сообщества.
+
+[h2]ЧТО УМЕЕТ ПРИЛОЖЕНИЕ[/h2]
+• Находит установленные моды Steam Workshop и показывает, где не хватает перевода.
+• Выгружает JSONL с готовым промптом для ChatGPT, Claude, DeepSeek и других чатов, затем импортирует результат. API-ключ не нужен; условия бесплатного доступа определяет сам сервис.
+• Переводит через Google, DeepL, Yandex, Claude и OpenAI-совместимые API. Тарифы провайдеров оплачиваются отдельно.
+• Сохраняет перевод в собственные файлы внутри мода или в отдельный патч-мод, не перезаписывая файлы автора.
+• Ведёт историю и помогает восстановить записанные приложением переводы после обновлений Steam.
+• Распознаёт отдельные русификаторы и позволяет переводить только недостающие или изменившиеся строки.
+• Поддерживает глоссарий, память переводов и справочник из установленной vanilla CK3.
+• Проверяет переменные, теги и игровые команды перед записью. Перевод всё равно нужно вычитать и проверить в игре.
+
+[h2]КАК НАЧАТЬ[/h2]
+1. Скачайте приложение: https://github.com/rqkeqq-ui/ck3translate/releases
+2. Распакуйте весь архив для своей системы и запустите приложение.
+3. Подпишитесь на эту базу в Steam и дождитесь загрузки. Не включайте её в playset.
+4. Выберите языки, просканируйте библиотеку и откройте нужный мод.
+
+Если ссылка скрыта клиентом Steam: найдите rqkeqq-ui/ck3translate на GitHub и откройте Releases.
+
+[h2]ЕСЛИ НУЖНА ПОМОЩЬ[/h2]
+Steam не найден? Укажите его папку в Настройках.
+Перевод пропал после обновления? Откройте карточку мода и воспользуйтесь проверкой и восстановлением записанных приложением файлов.
+Ошибки, предложения и связи модов с русификаторами: https://github.com/rqkeqq-ui/ck3translate/issues
+В предложении связи укажите ссылки на оригинал и перевод, язык и то, что вы проверили.
+
+[h2]ПОДДЕРЖАТЬ ПРОЕКТ[/h2]
+Приложение бесплатное, исходный код доступен под MIT. Поддержка добровольная:
+SOL: HhAGVLbTKzGxFBKQfJitSYsbKvg8ri4zXULLZugFVha7
+EVM (ETH / BSC / Polygon): 0x5018EB38ABE46b0c7920126F8C4cD42d1463cfAB
+BTC: bc1qqecjuduhccxeug9jjwhe4caczvjpxxpgttrupl
+SUI: 0xda4b6497eb5854075f55b7d9285dcbb4b5d7ddc0cedd7a1ee37307d2d99d6142
+
+Независимый проект, не связан с Paradox Interactive или Valve.
+
+────────────────────
+
+CK3 Localization Manager — Community Database (English)
+
+More stories in your language.
+
+This is the companion dataset for CK3 Localization Manager, a standalone application for translating and restoring Crusader Kings III mod localizations.
+
+[b]IMPORTANT: DO NOT enable this database in your active playset.[/b] It contains only data for the desktop application and does not change the game. Subscribing does not install the application.
+
+[h2]WHAT IS INCLUDED[/h2]
+The initial release contains 12 EN → RU glossary terms. The format supports links between original mods and translation sub-mods, plus localization processing rules. Those two sections are currently empty and will grow through verified community contributions.
+
+[h2]APPLICATION FEATURES[/h2]
+• Scan installed Steam Workshop mods and find missing translations.
+• Export JSONL tasks with prompts for ChatGPT, Claude, DeepSeek and other chats, then import the result. No API key is needed; free access depends on the chat service.
+• Connect Google, DeepL, Yandex, Claude and OpenAI-compatible APIs. Provider pricing and limits apply.
+• Write app-owned localization files inside the mod or create a separate patch mod without overwriting author files.
+• Track changes and restore app-generated translations after Steam updates.
+• Recognize translation sub-mods and translate only missing or changed text.
+• Keep terminology consistent with glossaries, translation memory and references extracted from your installed CK3.
+• Validate game variables, formatting tags and commands before writing. Review translations and test them in game.
+
+[h2]GET STARTED[/h2]
+1. Download the app: https://github.com/rqkeqq-ui/ck3translate/releases
+2. Extract the entire archive for your OS and launch the application.
+3. Subscribe to this database in Steam and wait for the download. Leave it out of your playset.
+4. Choose languages, scan your library and open a mod.
+
+If Steam hides the link, search for rqkeqq-ui/ck3translate on GitHub and open Releases.
+
+[h2]HELP & CONTRIBUTIONS[/h2]
+Set the Steam folder in Settings if automatic detection fails. To recover translations removed by an update, use the mod page's verification and restore controls.
+Report issues or propose translation-mod links: https://github.com/rqkeqq-ui/ck3translate/issues
+Include links to both mods, the language and what you tested.
+
+[h2]SUPPORT DEVELOPMENT[/h2]
+The app is free and open source under MIT. Donations are optional; addresses are listed in the Russian section above and at https://github.com/rqkeqq-ui/ck3translate/blob/main/docs/SUPPORT.md
+
+Not affiliated with Paradox Interactive or Valve.

@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -31,6 +32,9 @@ def pdx_mod_dir() -> Path:
     override = os.environ.get("CK3LOC_PDX_MOD_DIR")
     if override:
         return Path(override)
+    if sys.platform == "linux":
+        return (Path.home() / ".local/share/Paradox Interactive"
+                / "Crusader Kings III" / "mod")
     return (
         Path.home() / "Documents" / "Paradox Interactive"
         / "Crusader Kings III" / "mod"

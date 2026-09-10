@@ -1006,10 +1006,10 @@ class ModPage(QWidget):
                 "Папка мода не найдена — возможно, вы отписались от него."
             )
             return
-        try:
-            os.startfile(str(path))  # noqa: S606 — проводник Windows
-        except Exception:  # noqa: BLE001
-            subprocess.Popen(["explorer", str(path)])
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve())))
 
     def open_workshop(self):
         import webbrowser
