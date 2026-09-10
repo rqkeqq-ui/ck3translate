@@ -1,5 +1,7 @@
 __pycache__/
-workshop/
+workshop/*
+!workshop/ck3loc_community_database/
+!workshop/WORKSHOP_DESCRIPTION.txt
 *.pyc
 .venv/
 venv/
@@ -9,3 +11,19 @@ dist/
 tests/fixtures/real/
 .ck3loc-data/
 *.log
+
+# Local planning, personal launchers and generated artifacts
+/*-PROMPT.md
+/AGENTS.md
+/CK3-Localization-Manager-Spec.md
+/Start *.bat
+.env
+.env.*
+*.sqlite*
+*.db
+.pytest_cache/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+!CK3LocalizationManager.spec

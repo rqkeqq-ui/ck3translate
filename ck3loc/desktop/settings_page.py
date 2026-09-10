@@ -387,10 +387,12 @@ class SettingsPage(QWidget):
             self.community_status.setText("Не установлена или нет подписки.")
         else:
             self.community_status.setText(
-                "Workshop ID ещё не указан автором сборки."
+                "База готовится к публикации. Приложение уже можно использовать без подписки."
             )
         item_id = database.workshop_id if database else result.workshop_id
-        self.community_open.setEnabled(bool(workshop_page_url(item_id)))
+        workshop_url = workshop_page_url(item_id)
+        self.community_open.setText("Открыть в Workshop" if workshop_url else "Новости на GitHub")
+        self.community_open.setEnabled(bool(workshop_url or configured_repository_url()))
 
     def _open_community_page(self):
         result = discover_community_database(
@@ -408,7 +410,7 @@ class SettingsPage(QWidget):
             settings.set_value("steam_path", path)
 
     def _open_folder(self, path: Path):
-        try:
-            os.startfile(str(path))  # noqa: S606 — открытие проводника Windows
-        except Exception:  # noqa: BLE001
-            subprocess.Popen(["explorer", str(path)])
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve())))

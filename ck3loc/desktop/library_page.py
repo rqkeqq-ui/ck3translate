@@ -415,10 +415,10 @@ class LibraryPage(QWidget):
 
         path = pdx_mod_dir()
         path.mkdir(parents=True, exist_ok=True)
-        try:
-            os.startfile(str(path))  # noqa: S606 — проводник Windows
-        except Exception:  # noqa: BLE001
-            subprocess.Popen(["explorer", str(path)])
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve())))
 
     def focus_search(self):
         self.search.setFocus()
