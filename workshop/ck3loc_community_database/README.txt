@@ -1,11 +1,10 @@
-CK3Loc Community Database
+CK3 Localization Manager — Community Database
 
-This is a data subscription for the external CK3 Localization Manager.
-It does not change gameplay and must not be enabled in a playset.
+Optional data for the standalone application. Do not enable in a playset.
+Initial dataset: 12 EN → RU terms. Translation links and mod rules are empty.
+Future updates can add verified translation links and processing rules.
 
-The subscription provides:
-- shared CK3 glossaries;
-- verified links between original mods and translation mods;
-- safe per-mod scanning rules.
+Download: https://github.com/rqkeqq-ui/ck3translate/releases
+Issues: https://github.com/rqkeqq-ui/ck3translate/issues
 
-Download the application from the link on the Steam Workshop page.
+Not affiliated with Paradox Interactive or Valve.

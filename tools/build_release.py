@@ -18,6 +18,10 @@ from ck3loc import __version__
 
 
 def main() -> None:
+    if sys.version_info[:2] != (3, 12):
+        raise SystemExit("Release builds require Python 3.12. Use GitHub Actions or a Python 3.12 virtual environment.")
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests"], cwd=ROOT, check=True)
     subprocess.run([sys.executable, "tools/validate_community_db.py"], cwd=ROOT, check=True)
     subprocess.run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean",
@@ -39,7 +43,12 @@ def main() -> None:
         }), encoding="utf-8")
         env = dict(os.environ, CK3LOC_DATA=temporary, CK3LOC_PDX_MOD_DIR=str(data / "mods"),
                    QT_QPA_PLATFORM="offscreen")
-        subprocess.run([str(executable), "--smoke-test"], env=env, check=True, timeout=45)
+        try:
+            subprocess.run([str(executable), "--smoke-test"], env=env, check=True, timeout=45)
+        except (subprocess.SubprocessError, OSError):
+            for log in data.glob("*.log"):
+                print(log.read_text(encoding="utf-8", errors="replace"))
+            raise
     for source, name in [("LICENSE", "LICENSE"), ("THIRD_PARTY_NOTICES.md", "THIRD_PARTY_NOTICES.md"),
                          ("README-запуск.md", "USER_GUIDE.md")]:
         shutil.copy2(ROOT / source, package / name)
