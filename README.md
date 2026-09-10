@@ -1,64 +1,66 @@
 <div align="center">
 
 # CK3 Localization Manager
-### Больше историй на вашем языке.
-Переводите моды Crusader Kings III, следите за изменениями и сохраняйте свою работу после обновлений.
 
-[**Скачать приложение**](https://github.com/rqkeqq-ui/ck3translate/releases) · [Как пользоваться](README-запуск.md) · [Сообщить об ошибке](https://github.com/rqkeqq-ui/ck3translate/issues) · [English](docs/README.en.md)
+### More stories in your language.
+
+Translate Crusader Kings III mods, keep up with changes and restore your work after updates.
+
+[**Download the app**](https://github.com/rqkeqq-ui/ck3translate/releases) · [Get started](#get-started-in-minutes) · [Report an issue](https://github.com/rqkeqq-ui/ck3translate/issues) · [Русский](docs/README.ru.md)
 
 </div>
 
-![Библиотека модов](docs/images/01-library.png)
+![Mod library](docs/images/01-library.png)
 
-## Любимый мод обновился. Перевод тоже должен успевать.
+## Your favorite mod just updated. Keep its translation up to date, too.
 
-CK3 Localization Manager собирает работу с локализациями в одном окне: показывает, где не хватает перевода, помогает перевести нужные строки и восстановить созданные приложением файлы. Для игроков, которые хотят понимать каждое событие, и переводчиков, которым важно не начинать заново после каждого обновления.
+CK3 Localization Manager brings mod translation into one place: find missing text, translate what you need and restore files created by the app. For players who want to understand every event, and translators who want to keep their progress through every update.
 
-### Вся библиотека перед глазами
+### Your whole library at a glance
 
-Сканируйте установленные подписки Steam Workshop. Находите моды без перевода, неполные локализации и отдельные русификаторы. Процент показывает наличие строк по ключам — качество текста всё равно стоит проверить.
+Scan installed Steam Workshop subscriptions. Find untranslated mods, incomplete localizations and separate translation mods. Coverage measures matching localization keys; translation quality still needs a human review.
 
-### Переводите так, как удобно вам
+### Translate your way
 
-Выгрузите задание с промптом в JSONL, отправьте его в ChatGPT, Claude, DeepSeek или другой чат и импортируйте результат. Для этого не нужен API-ключ; доступность бесплатного чата зависит от выбранного сервиса. Или подключите Google, DeepL, Yandex, Claude либо OpenAI-совместимый API прямо в программе. У провайдеров свои тарифы и лимиты. Для переводческих программ есть XLIFF.
+Export a JSONL task with a ready-to-use prompt, send it to ChatGPT, Claude, DeepSeek or another chat, then import the result. No API key is needed for this workflow; free access depends on the chat service. Or connect Google, DeepL, Yandex, Claude and OpenAI-compatible APIs directly in the app. Provider pricing and limits apply. XLIFF exchange is available for translation tools.
 
-### Работа остаётся с вами
+### Keep the work you have already done
 
-Приложение добавляет собственные файлы перевода, сохраняя исходные файлы автора. Можно писать внутрь каталога мода или создать отдельный патч-мод. История, резервные копии и проверка изменений помогают восстановить записанный приложением перевод после обновления Steam. Новые и изменённые автором строки можно переводить отдельно.
+The app writes its own translation files while preserving the mod author's original files. Write into the mod directory or create a separate patch mod. Local history, backups and change tracking help restore app-generated translations after Steam updates. Translate new or changed source text separately.
 
-### Термины и игровой синтаксис под контролем
+### Consistent terms. Game syntax under control.
 
-Редактор показывает исходник и перевод рядом. Глоссарий и память переводов помогают сохранять единый стиль; справочник vanilla можно получить из установленной CK3. Проверка токенов обнаруживает потерянные переменные, теги и команды до записи. Автоматическая проверка не заменяет вычитку и проверку в игре.
+Review the original and translated text side by side. A glossary and translation memory help keep your terminology consistent; vanilla references can be extracted from your installed CK3. Token validation detects missing variables, formatting tags and commands before writing. Always review the text and test it in game.
 
-## Посмотрите, как это работает
+## See it in action
 
-| Карточка мода | Редактор строк |
+| Mod overview | Translation editor |
 | --- | --- |
-| ![Карточка](docs/images/02-mod.png) | ![Редактор](docs/images/03-editor.png) |
-| **Глоссарий** | **Экспорт для чата** |
-| ![Глоссарий](docs/images/04-glossary.png) | ![Экспорт](docs/images/05-export.png) |
+| ![Mod overview](docs/images/02-mod.png) | ![Translation editor](docs/images/03-editor.png) |
+| **Glossary** | **Export for an AI chat** |
+| ![Glossary](docs/images/04-glossary.png) | ![Export dialog](docs/images/05-export.png) |
 
-Скриншоты настоящего интерфейса с вымышленными демонстрационными модами. [Галерея и подписи для публикации](docs/GALLERY.md).
+Actual application screens, shown in Russian with fictional demonstration mods. [Gallery and publishing captions](docs/GALLERY.md).
 
-## Начните за несколько минут
+## Get started in minutes
 
-1. Откройте [Releases](https://github.com/rqkeqq-ui/ck3translate/releases) и скачайте архив для своей системы.
-2. Распакуйте **весь архив**. На Windows запустите `CK3LocalizationManager.exe`, на Linux — `CK3LocalizationManager`, на macOS — приложение `.app`. Python устанавливать не нужно.
-3. Выберите языки и просканируйте библиотеку. Если Steam не найден, укажите его папку в настройках.
-4. Откройте мод, переведите недостающие строки, проверьте результат и запишите перевод.
+1. Open [Releases](https://github.com/rqkeqq-ui/ck3translate/releases) and download the archive for your operating system.
+2. Extract the **entire archive**. Run `CK3LocalizationManager.exe` on Windows, `CK3LocalizationManager` on Linux, or the `.app` on macOS. No Python installation required.
+3. Choose your languages and scan your library. If Steam is not detected, set its folder in Settings.
+4. Open a mod, translate missing text, review the result and write your translation.
 
-Windows x64, Linux x64 и macOS Apple Silicon собираются отдельно. Доступные файлы и ограничения конкретной версии перечислены в релизе. [Подробное руководство](README-запуск.md).
+Windows x64, Linux x64 and macOS Apple Silicon are built separately. Check the release notes for available downloads and platform limitations. [Detailed user guide (Russian)](README-запуск.md).
 
-## Community Database — база, которая растёт вместе с сообществом
+## Community Database — growing with the community
 
-Необязательная база для связей модов с русификаторами, общих терминов и правил обработки. Первый выпуск содержит стартовый глоссарий из 12 терминов; реестр связей и правила пока пусты. Присылайте проверяемые предложения через Issues.
+An optional dataset for links between mods and their translations, shared terminology and processing rules. The first release includes 12 EN → RU glossary terms; translation links and mod rules are currently empty. Share verifiable suggestions through Issues.
 
-**Страница Steam Workshop готовится к публикации.** Программа работает без подписки. После публикации ссылка появится в настройках новой сборки; уже установленная база обнаруживается по её служебному файлу.
+**The Steam Workshop page is coming later.** The app works without a subscription. Once published, the link will appear in Settings in a new build; an installed database can already be discovered through its marker file.
 
-Подписка скачивает только данные, а не приложение. **Базу не нужно включать в playset.**
+Subscribing downloads data, not the desktop application. **Do not enable the database in a playset.**
 
-## Открытый проект
+## Free and open source
 
-Бесплатное приложение с открытым исходным кодом под [MIT](LICENSE). Сервисы перевода оплачиваются отдельно, если требуют оплаты. Проект не связан с Paradox Interactive или Valve. Лицензии сторонних компонентов приведены [отдельно](THIRD_PARTY_NOTICES.md).
+The app is free and licensed under [MIT](LICENSE). Translation services may charge separately. This project is not affiliated with Paradox Interactive or Valve. Dependencies retain their [own licenses](THIRD_PARTY_NOTICES.md).
 
-[Поддержать разработку](docs/SUPPORT.md) · [Инструкция по публикации для автора](PUBLISHING.md) · [Сборка из исходников](docs/DEVELOPMENT.md)
+[Support development](docs/SUPPORT.md) · [Publishing guide for the author (Russian)](PUBLISHING.md) · [Build from source (Russian)](docs/DEVELOPMENT.md) · [Описание на русском](docs/README.ru.md)
