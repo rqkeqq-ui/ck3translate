@@ -55,7 +55,7 @@ Windows x64, Linux x64 and macOS Apple Silicon are built separately. Check the r
 
 ## Community Database — growing with the community
 
-An optional dataset for links between mods and their translations, shared terminology and processing rules. The first release includes 12 EN → RU glossary terms; translation links and mod rules are currently empty. Share verifiable suggestions through Issues.
+An optional dataset for links between mods and their translations, shared terminology and processing rules. The first release includes glossary terms; translation links and mod rules are currently empty. Share verifiable suggestions through Issues.
 
 **[Subscribe to the Community Database on Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3799038632).** Wait for Steam to download the files, then open the app. If the database is missing, the startup reminder lets you open Workshop, check the download or continue without it. Subscribing is optional.
 
