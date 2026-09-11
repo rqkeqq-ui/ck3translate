@@ -22,10 +22,12 @@ def main() -> None:
         raise SystemExit("Release builds require Python 3.12. Use GitHub Actions or a Python 3.12 virtual environment.")
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests"], cwd=ROOT, check=True)
-    subprocess.run([sys.executable, "tools/validate_community_db.py"], cwd=ROOT, check=True)
+    # The maintainer suite is local; public builds validate data and launch the bundle.
+    if (ROOT / "tests").is_dir():
+        subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests"], cwd=ROOT, check=True)
+    subprocess.run([sys.executable, ".github/validate_community_db.py"], cwd=ROOT, check=True)
     subprocess.run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean",
-                    "CK3LocalizationManager.spec"], cwd=ROOT, check=True)
+                    ".github/CK3LocalizationManager.spec"], cwd=ROOT, check=True)
     system = platform.system().lower()
     arch = platform.machine().lower().replace("amd64", "x86_64").replace("aarch64", "arm64")
     dist = ROOT / "dist"
@@ -49,8 +51,9 @@ def main() -> None:
             for log in data.glob("*.log"):
                 print(log.read_text(encoding="utf-8", errors="replace"))
             raise
-    for source, name in [("LICENSE", "LICENSE"), ("THIRD_PARTY_NOTICES.md", "THIRD_PARTY_NOTICES.md"),
-                         ("README-запуск.md", "USER_GUIDE.md")]:
+    for source, name in [("LICENSE", "LICENSE"), ("docs/THIRD_PARTY_NOTICES.md", "THIRD_PARTY_NOTICES.md"),
+                         ("docs/USER_GUIDE.en.md", "USER_GUIDE.en.md"),
+                         ("docs/USER_GUIDE.ru.md", "USER_GUIDE.ru.md")]:
         shutil.copy2(ROOT / source, package / name)
     for distribution in importlib.metadata.distributions():
         for entry in distribution.files or []:

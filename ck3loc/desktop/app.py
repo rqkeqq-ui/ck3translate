@@ -52,6 +52,10 @@ def main() -> int:
     win.show()
     if smoke_test:
         QTimer.singleShot(1000, win.close)
+    else:
+        from ck3loc.desktop.community_prompt import show_community_prompt
+
+        QTimer.singleShot(0, lambda: show_community_prompt(win))
     return app.exec()
 
 

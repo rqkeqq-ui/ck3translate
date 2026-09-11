@@ -1,7 +1,15 @@
 version="1.0.0"
 tags={
+	"1.18 'Crane'"
+	"1.16 'Chamfron'"
+	"1.14 'Traverse'"
+	"1.19 'Scribe'"
+	"1.17 'Ascendant'"
+	"1.15 'Crown'"
 	"Utilities"
 	"Translation"
+	"Fixes"
 }
-name="CK3Loc Community Database"
+name="CK3 Localization Manager — Community Database"
 supported_version="1.*"
+remote_file_id="3799038632"

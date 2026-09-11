@@ -1,8 +1,0 @@
-﻿l_english:
- quoted: "He said \"stop\" twice"
- newline: "First line\nSecond line"
- icon: "@epe_icon_epe_rule!EPE: Enclosed Helmets"
- func: "[Character.GetFirstName] of [GetPlayer.GetPrimaryTitle.GetNameNoTier]"
- subst: "Cost: $VALUE|+0$ gold"
- fmt: "#T Title#! and #P positive#!"
- nested: "[Concept('realm','Realm')] rules"
