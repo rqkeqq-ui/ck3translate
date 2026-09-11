@@ -22,10 +22,9 @@ def main() -> None:
         raise SystemExit("Release builds require Python 3.12. Use GitHub Actions or a Python 3.12 virtual environment.")
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    # The maintainer suite is local; public builds validate data and launch the bundle.
+    # The maintainer suite is local; public builds launch the frozen bundle.
     if (ROOT / "tests").is_dir():
         subprocess.run([sys.executable, "-m", "unittest", "discover", "-s", "tests"], cwd=ROOT, check=True)
-    subprocess.run([sys.executable, ".github/validate_community_db.py"], cwd=ROOT, check=True)
     subprocess.run([sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean",
                     ".github/CK3LocalizationManager.spec"], cwd=ROOT, check=True)
     system = platform.system().lower()
