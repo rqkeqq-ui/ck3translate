@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 )
 
 from ck3loc.core import db, settings
+from ck3loc.core.i18n import tr, tr_format
 from ck3loc.core.bundle import import_jsonl
 from ck3loc.core.ops import apply_import_report, load_project_context, rows_to_translate
 from ck3loc.core.scanner import semantic_hash
@@ -259,7 +260,8 @@ class ModPage(QWidget):
 
         top = QHBoxLayout()
         self.row_filter = QComboBox()
-        self.row_filter.addItems(list(ROW_FILTERS))
+        for label in ROW_FILTERS:
+            self.row_filter.addItem(label, label)
         self.row_filter.setMinimumWidth(220)
         self.row_filter.currentIndexChanged.connect(self.refresh_rows)
         top.addWidget(self.row_filter)
@@ -486,9 +488,9 @@ class ModPage(QWidget):
         self.coverage_bar.set_segments(breakdown.segments())
         self.coverage_legend.set_segments(breakdown.segments())
         self.coverage_caption.setText(
-            f"перевод {src} → {tgt}"
-            + (f" · {translated} из {of} строк, "
-               f"не хватает {of - translated}" if of else "")
+            tr_format("перевод {src} → {tgt}", src=src, tgt=tgt)
+            + (tr_format(" · {translated} из {total} строк, не хватает {missing}",
+                         translated=translated, total=of, missing=of - translated) if of else "")
         )
         # в метках показываем только то, чего нет в легенде полоски:
         # осиротевшие, лишние, конфликты — иначе повтор одного и того же
@@ -502,9 +504,9 @@ class ModPage(QWidget):
         self.status_chips.setVisible(bool(chips))
         self.info.setText(
             f"<span style='color:{c['text_dim']}'>ID {scan.mod_id}  ·  "
-            f"версия автора {d.version or '—'}  ·  "
-            f"совместимость {d.supported_version or '—'}</span><br>"
-            f"<b>Языки в моде:</b> {langs or '—'}<br>"
+            f"{tr('версия автора')} {d.version or '—'}  ·  "
+            f"{tr('совместимость')} {d.supported_version or '—'}</span><br>"
+            f"<b>{tr('Языки в моде:')}</b> {langs or '—'}<br>"
             f"<span style='color:{c['text_dim']}; font-size: 11px'>"
             f"{scan.mod_dir}</span>"
         )
@@ -640,8 +642,8 @@ class ModPage(QWidget):
         self.diag_area.setCurrentWidget(
             self.diag_table if diags else self.diag_empty
         )
-        self.tabs.setTabText(3, f"Диагностика ({len(diags)})" if diags
-                             else "Диагностика")
+        self.tabs.setTabText(3, f"{tr('Диагностика')} ({len(diags)})" if diags
+                             else tr("Диагностика"))
 
     def _load_changes(self):
         snaps = self.conn.execute(
@@ -694,7 +696,7 @@ class ModPage(QWidget):
     def refresh_rows(self):
         if self.ctx is None:
             return
-        want = ROW_FILTERS[self.row_filter.currentText()]
+        want = ROW_FILTERS[self.row_filter.currentData()]
         query = self.row_search.text().strip().lower()
         shown = []
         for r in self.ctx.rows:
@@ -706,7 +708,7 @@ class ModPage(QWidget):
                 continue
             shown.append(r)
         self._shown_rows = shown
-        self.rows_count.setText(f"показано {len(shown)} из {len(self.ctx.rows)}")
+        self.rows_count.setText(tr_format("показано {shown} из {total}", shown=len(shown), total=len(self.ctx.rows)))
         self.rows_table.setRowCount(len(shown))
         for i, r in enumerate(shown):
             st = QTableWidgetItem(status_label(r.status))
@@ -722,7 +724,7 @@ class ModPage(QWidget):
                 item.setForeground(QColor(palette(self.theme)["warn"]))
                 item.setToolTip("Перевод совпадает с оригиналом — проверьте")
             self.rows_table.setItem(i, 3, item)
-        self.tabs.setTabText(1, f"Строки ({len(self.ctx.rows)})")
+        self.tabs.setTabText(1, f"{tr('Строки')} ({len(self.ctx.rows)})")
 
     # ---------- редактор ----------
 
@@ -771,7 +773,7 @@ class ModPage(QWidget):
         c = palette(self.theme)
         if not target.strip():
             self.token_state.setText(
-                f"<span style='color:{c['text_dim']}'>перевод пуст</span>"
+                f"<span style='color:{c['text_dim']}'>{tr('перевод пуст')}</span>"
             )
             return
         errors = validate_translation(row.source_text, target)
@@ -782,7 +784,7 @@ class ModPage(QWidget):
             )
         else:
             self.token_state.setText(
-                f"<span style='color:{c['ok']}'>Игровые коды в порядке</span>"
+                f"<span style='color:{c['ok']}'>{tr('Игровые коды в порядке')}</span>"
             )
 
     def save_current_row(self, next_row: bool = False):

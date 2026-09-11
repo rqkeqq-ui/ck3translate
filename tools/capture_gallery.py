@@ -9,13 +9,15 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
+os.environ["QT_SCALE_FACTOR"] = "3"
 
 
 def main() -> None:
     from PySide6.QtWidgets import QApplication
-    from PySide6.QtGui import QFontDatabase, QFont, QImage, QPainter
-    from PySide6.QtSvg import QSvgRenderer
+    from PySide6.QtGui import QFontDatabase, QFont
     from ck3loc.core import settings
+    from ck3loc.core.i18n import set_language
+    from ck3loc.desktop.translate_ui import translate_tree
     from ck3loc.desktop.theme import stylesheet
     from ck3loc.desktop.main_window import MainWindow
     from ck3loc.desktop.workers import ModRow
@@ -29,36 +31,31 @@ def main() -> None:
         os.environ["CK3LOC_DATA"] = str(base / "data")
         os.environ["CK3LOC_PDX_MOD_DIR"] = str(base / "mods")
         settings.save({"scan_on_start": False, "fetch_covers": False,
-                       "steam_path": str(base / "steam"), "ui_lang": "ru"})
+                       "steam_path": str(base / "steam"), "ui_lang": "en"})
         app = QApplication([])
         fonts = Path(os.environ.get("WINDIR", "C:/Windows")) / "Fonts"
         for name in ("segoeui.ttf", "segoeuib.ttf"):
             if (fonts / name).exists():
                 QFontDatabase.addApplicationFont(str(fonts / name))
         app.setFont(QFont("Segoe UI", 10))
-        renderer = QSvgRenderer(str(output / "community-cover.svg"))
-        cover = QImage(1024, 1024, QImage.Format.Format_ARGB32)
-        painter = QPainter(cover)
-        renderer.render(painter)
-        painter.end()
-        cover.save(str(ROOT / "workshop/ck3loc_community_database/thumbnail.png"))
+        set_language("en")
         app.setStyleSheet(stylesheet("dark"))
         win = MainWindow()
-        win.resize(1440, 960)
-        win.status_label.setText("Демонстрационные данные • CK3 Localization Manager")
+        win.resize(1280, 800)
+        win.status_label.setText("Demonstration data • CK3 Localization Manager")
         win.library.set_rows([
-            ModRow("900000001", "Royal Court Stories · Demo", 2, 68.0, "96 пропущено", True, "10.09.2026", 0, True),
-            ModRow("900000002", "Dynasty Traditions · Demo", 2, 100.0, "полный", True, "09.09.2026", 0, True),
-            ModRow("900000003", "Medieval Chronicles · Demo", 2, 42.0, "174 пропущено", True, "08.09.2026", 0, False),
-            ModRow("900000004", "Pilgrimage Events · Demo", 1, 0.0, "нет перевода", True, "07.09.2026", 0, False),
-            ModRow("900000005", "Heraldry Collection · Demo", 0, None, "нет локализации", False, "06.09.2026", 0, False),
+            ModRow("900000001", "Royal Court Stories · Demo", 2, 50.0, "4 missing", True, "10.09.2026", 0, True),
+            ModRow("900000002", "Dynasty Traditions · Demo", 2, 100.0, "Complete", True, "09.09.2026", 0, True),
+            ModRow("900000003", "Medieval Chronicles · Demo", 2, 42.0, "174 missing", True, "08.09.2026", 0, False),
+            ModRow("900000004", "Pilgrimage Events · Demo", 1, 0.0, "Untranslated", True, "07.09.2026", 0, False),
+            ModRow("900000005", "Heraldry Collection · Demo", 0, None, "No localization", False, "06.09.2026", 0, False),
         ])
         win.show()
 
         def capture(widget, name):
             for _ in range(8):
                 app.processEvents()
-            if not widget.grab().save(str(output / name)):
+            if not widget.grab().save(str(output / name), "PNG"):
                 raise RuntimeError(name)
 
         capture(win, "01-library.png")
@@ -91,6 +88,8 @@ def main() -> None:
         win.go("glossary")
         capture(win, "04-glossary.png")
         dialog = ExportScopeDialog({WHAT_ALL: 300, WHAT_MISSING: 96, WHAT_OUTDATED: 108, WHAT_STALE: 12})
+        translate_tree(dialog)
+        dialog.resize(740, 470)
         dialog.show()
         capture(dialog, "05-export.png")
         dialog.close()

@@ -309,6 +309,27 @@ class TestLibraryPage(GuiTestCase):
 
 
 class TestModPage(GuiTestCase):
+    def test_english_filters_keep_stable_values(self):
+        from ck3loc.core.i18n import set_language
+        from ck3loc.desktop.mod_page import ModPage
+        from ck3loc.desktop.translate_ui import translate_tree
+
+        set_language("en")
+        self.addCleanup(set_language, "ru")
+        page = ModPage("dark")
+        try:
+            translate_tree(page)
+            self.assertTrue(page.load(self.mod_dir.name, mod_dir=self.mod_dir))
+            total = page.rows_table.rowCount()
+            self.assertIn("Strings", page.tabs.tabText(1))
+            page.row_filter.setCurrentIndex(page.row_filter.findData("Не переведено"))
+            self.assertGreater(page.rows_table.rowCount(), 0)
+            self.assertLess(page.rows_table.rowCount(), total)
+            page.row_filter.setCurrentIndex(page.row_filter.findData("Все строки"))
+            self.assertEqual(page.rows_table.rowCount(), total)
+        finally:
+            page.close_db()
+
     def _page(self):
         from ck3loc.desktop.mod_page import ModPage
 

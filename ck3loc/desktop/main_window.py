@@ -193,7 +193,9 @@ class MainWindow(QMainWindow):
             "settings": "Настройки",
         }
         self.stack.setCurrentIndex(index)
-        self.page_title.setText(titles[key])
+        from ck3loc.core.i18n import tr
+
+        self.page_title.setText(tr(titles[key]))
         self.page_title.setVisible(True)
         if key == "glossary":
             self.glossary.refresh()
