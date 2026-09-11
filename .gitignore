@@ -1,7 +1,5 @@
 __pycache__/
-workshop/*
-!workshop/ck3loc_community_database/
-!workshop/WORKSHOP_DESCRIPTION.txt
+/workshop/
 *.pyc
 .venv/
 venv/
@@ -44,5 +42,5 @@ Thumbs.db
 /docs/PARADOX_DESCRIPTION.txt
 /docs/README.en.md
 /docs/images/community-cover.svg
-/workshop/WORKSHOP_DESCRIPTION.txt
+/.github/validate_community_db.py
 !/.github/CK3LocalizationManager.spec
