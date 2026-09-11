@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from ck3loc.core.i18n import tr, tr_format
 from ck3loc.core.ops import WHAT_ALL, WHAT_MISSING, WHAT_OUTDATED, WHAT_STALE
 from ck3loc.desktop.widgets import Card
 
@@ -31,7 +32,8 @@ class ExportScopeDialog(QDialog):
         self.options: list[tuple[QRadioButton, str]] = []
 
         def add_option(text: str, what: str, hint: str, enabled: bool = True):
-            radio = QRadioButton(f"{text} — {counts.get(what, 0)} строк")
+            radio = QRadioButton(tr_format("{label} — {count} строк",
+                                               label=tr(text), count=counts.get(what, 0)))
             radio.setEnabled(enabled and counts.get(what, 0) > 0)
             card.add(radio)
             lab = QLabel(hint)

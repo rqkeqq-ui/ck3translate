@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ck3loc.core.i18n import tr
 from ck3loc.desktop.theme import palette
 
 # вид сегмента → (ключ цвета, подпись)
@@ -55,7 +56,7 @@ def format_percent(translated: int, total: int) -> str:
 def describe(segments: list[tuple[str, int]]) -> str:
     """Расшифровка словами — для подсказки и карточки мода."""
     parts = [
-        f"{SEGMENTS[kind][1]}: {count}"
+        f"{tr(SEGMENTS[kind][1])}: {count}"
         for kind, count in segments if count
     ]
     return " · ".join(parts) if parts else "нет данных"
@@ -182,7 +183,7 @@ class CoverageLegend(QWidget):
             painter.setBrush(segment_color(kind, self.theme))
             painter.drawRoundedRect(QRectF(x, 6.0, 8.0, 8.0), 2.0, 2.0)
             x += 12
-            text = f"{SEGMENTS[kind][1]}: {count}"
+            text = f"{tr(SEGMENTS[kind][1])}: {count}"
             painter.setPen(QColor(palette(self.theme)["text_dim"]))
             painter.drawText(QRectF(x, 0, metrics.horizontalAdvance(text) + 4,
                                     self.height()),

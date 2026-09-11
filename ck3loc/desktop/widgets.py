@@ -37,7 +37,9 @@ STATUS_UI = {
 
 
 def status_label(status: str) -> str:
-    return STATUS_UI.get(status, (status, "text_dim"))[0]
+    from ck3loc.core.i18n import tr
+
+    return tr(STATUS_UI.get(status, (status, "text_dim"))[0])
 
 
 def status_color(status: str, theme: str = "dark") -> str:

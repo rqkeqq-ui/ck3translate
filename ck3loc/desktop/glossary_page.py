@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from ck3loc.core import db, settings
+from ck3loc.core.i18n import tr, tr_format
 from ck3loc.core.glossary_seed import seed_glossary
 from ck3loc.desktop.widgets import align_headers, setup_table
 
@@ -123,13 +124,13 @@ class GlossaryPage(QWidget):
             self._ids.append(r["id"])
             self.table.setItem(i, 0, QTableWidgetItem(r["source_term"]))
             self.table.setItem(i, 1, QTableWidgetItem(r["target_term"] or ""))
-            mode_item = QTableWidgetItem(MODES.get(r["mode"], r["mode"]))
+            mode_item = QTableWidgetItem(tr(MODES.get(r["mode"], r["mode"])))
             mode_item.setFlags(mode_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(i, 2, mode_item)
             level = "глобальный" if r["level"] == "global" else r["level"]
             if r["level"] == "mod" and r["mod_id"]:
                 level = f"мод {r['mod_id']}"
-            lvl_item = QTableWidgetItem(level)
+            lvl_item = QTableWidgetItem(tr(level))
             lvl_item.setFlags(lvl_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(i, 3, lvl_item)
         self.table.blockSignals(False)
@@ -139,7 +140,8 @@ class GlossaryPage(QWidget):
             (self.source_lang, self.target_lang),
         ).fetchone()["n"]
         self.count.setText(
-            f"{self.source_lang} → {self.target_lang}: {total} терминов"
+            tr_format("{source} → {target}: {total} терминов",
+                      source=self.source_lang, target=self.target_lang, total=total)
         )
 
     def _on_edit(self, item):

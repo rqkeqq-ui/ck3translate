@@ -40,7 +40,7 @@ Review the original and translated text side by side. A glossary and translation
 | **Glossary** | **Export for an AI chat** |
 | ![Glossary](docs/images/04-glossary.png) | ![Export dialog](docs/images/05-export.png) |
 
-Actual application screens, shown in Russian with fictional demonstration mods. [Gallery and publishing captions](docs/GALLERY.md).
+Actual application screens, shown in English with fictional demonstration mods. [Gallery and publishing captions](docs/GALLERY.md).
 
 ## Get started in minutes
 
