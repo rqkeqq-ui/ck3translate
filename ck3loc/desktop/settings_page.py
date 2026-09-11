@@ -156,6 +156,12 @@ class SettingsPage(QWidget):
         )
         self.community_enabled.toggled.connect(self._community_toggled)
         community_card.add(self.community_enabled)
+        self.community_prompt = QCheckBox("Предлагать подписку на базу при запуске")
+        self.community_prompt.setChecked(bool(cfg.get("community_db_prompt_enabled", True)))
+        self.community_prompt.toggled.connect(
+            lambda enabled: settings.set_value("community_db_prompt_enabled", enabled)
+        )
+        community_card.add(self.community_prompt)
         community_row = QWidget()
         cr = QHBoxLayout(community_row)
         cr.setContentsMargins(0, 0, 0, 0)
@@ -362,6 +368,7 @@ class SettingsPage(QWidget):
 
     def _refresh_community_db(self):
         result = discover_community_database(
+            Path(settings.get("steam_path")) if settings.get("steam_path") else None,
             enabled=self.community_enabled.isChecked()
         )
         database = result.database
@@ -396,6 +403,7 @@ class SettingsPage(QWidget):
 
     def _open_community_page(self):
         result = discover_community_database(
+            Path(settings.get("steam_path")) if settings.get("steam_path") else None,
             enabled=self.community_enabled.isChecked()
         )
         item_id = result.database.workshop_id if result.database else result.workshop_id

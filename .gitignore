@@ -27,3 +27,22 @@ tests/fixtures/real/
 .DS_Store
 Thumbs.db
 !CK3LocalizationManager.spec
+
+# Maintainer materials are kept locally, not in the public product tree.
+/tests/
+/tools/
+/PUBLISHING.md
+/README-запуск.md
+/build_release.bat
+/build_release.ps1
+/install.bat
+/run.bat
+/run_tests.bat
+/thumbnail.png
+/docs/DEVELOPMENT.md
+/docs/GALLERY.md
+/docs/PARADOX_DESCRIPTION.txt
+/docs/README.en.md
+/docs/images/community-cover.svg
+/workshop/WORKSHOP_DESCRIPTION.txt
+!/.github/CK3LocalizationManager.spec

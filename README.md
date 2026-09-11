@@ -2,11 +2,13 @@
 
 # CK3 Localization Manager
 
+**Supported interface languages: English, Russian, German, French, Spanish, Simplified Chinese, and Korean.**
+
 ### More stories in your language.
 
 Translate Crusader Kings III mods, keep up with changes and restore your work after updates.
 
-[**Download the app**](https://github.com/rqkeqq-ui/ck3translate/releases) · [Get started](#get-started-in-minutes) · [Report an issue](https://github.com/rqkeqq-ui/ck3translate/issues) · [Русский](docs/README.ru.md)
+[**Download the app**](https://github.com/rqkeqq-ui/ck3translate/releases) · [Steam Workshop Database](https://steamcommunity.com/sharedfiles/filedetails/?id=3799038632) · [User guide](docs/USER_GUIDE.en.md) · [Report an issue](https://github.com/rqkeqq-ui/ck3translate/issues) · [Русский](docs/README.ru.md)
 
 </div>
 
@@ -40,7 +42,7 @@ Review the original and translated text side by side. A glossary and translation
 | **Glossary** | **Export for an AI chat** |
 | ![Glossary](docs/images/04-glossary.png) | ![Export dialog](docs/images/05-export.png) |
 
-Actual application screens, shown in English with fictional demonstration mods. [Gallery and publishing captions](docs/GALLERY.md).
+Actual application screens, shown in English with fictional demonstration mods. Download the full-resolution PNGs from [the gallery](docs/images).
 
 ## Get started in minutes
 
@@ -49,18 +51,18 @@ Actual application screens, shown in English with fictional demonstration mods. 
 3. Choose your languages and scan your library. If Steam is not detected, set its folder in Settings.
 4. Open a mod, translate missing text, review the result and write your translation.
 
-Windows x64, Linux x64 and macOS Apple Silicon are built separately. Check the release notes for available downloads and platform limitations. [Detailed user guide (Russian)](README-запуск.md).
+Windows x64, Linux x64 and macOS Apple Silicon are built separately. Check the release notes for available downloads and platform limitations. [User guide](docs/USER_GUIDE.en.md) · [Руководство на русском](docs/USER_GUIDE.ru.md).
 
 ## Community Database — growing with the community
 
 An optional dataset for links between mods and their translations, shared terminology and processing rules. The first release includes 12 EN → RU glossary terms; translation links and mod rules are currently empty. Share verifiable suggestions through Issues.
 
-**The Steam Workshop page is coming later.** The app works without a subscription. Once published, the link will appear in Settings in a new build; an installed database can already be discovered through its marker file.
+**[Subscribe to the Community Database on Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3799038632).** Wait for Steam to download the files, then open the app. If the database is missing, the startup reminder lets you open Workshop, check the download or continue without it. Subscribing is optional.
 
 Subscribing downloads data, not the desktop application. **Do not enable the database in a playset.**
 
 ## Free and open source
 
-The app is free and licensed under [MIT](LICENSE). Translation services may charge separately. This project is not affiliated with Paradox Interactive or Valve. Dependencies retain their [own licenses](THIRD_PARTY_NOTICES.md).
+The app is free and licensed under [MIT](LICENSE). Translation services may charge separately. This project is not affiliated with Paradox Interactive or Valve. Dependencies retain their [own licenses](docs/THIRD_PARTY_NOTICES.md).
 
-[Support development](docs/SUPPORT.md) · [Publishing guide for the author (Russian)](PUBLISHING.md) · [Build from source (Russian)](docs/DEVELOPMENT.md) · [Описание на русском](docs/README.ru.md)
+[Support development](docs/SUPPORT.md) · [User guide](docs/USER_GUIDE.en.md) · [Описание на русском](docs/README.ru.md)

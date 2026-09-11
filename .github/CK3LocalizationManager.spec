@@ -1,16 +1,20 @@
 # -*- mode: python ; coding: utf-8 -*-
+from pathlib import Path
+
+ROOT = Path(SPECPATH).resolve().parent
+
 from PyInstaller.utils.hooks import collect_submodules
 from PyInstaller.utils.hooks import copy_metadata
 
-datas = [('ck3loc/lang', 'ck3loc/lang'), ('ck3loc/community_db_config.json', 'ck3loc')]
+datas = [(str(ROOT / 'ck3loc/lang'), 'ck3loc/lang'), (str(ROOT / 'ck3loc/community_db_config.json'), 'ck3loc')]
 hiddenimports = []
 datas += copy_metadata('keyring')
 hiddenimports += collect_submodules('keyring.backends')
 
 
 a = Analysis(
-    ['ck3loc/desktop/__main__.py'],
-    pathex=[],
+    [str(ROOT / 'ck3loc/desktop/__main__.py')],
+    pathex=[str(ROOT)],
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,
