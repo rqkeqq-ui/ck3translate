@@ -50,10 +50,11 @@ class ProjectContext:
 
 
 def find_mod_dir(mod_id: str, steam_path: Path | None = None) -> Path | None:
-    content = workshop_content_dirs(steam_path)
-    for d in list_workshop_mod_dirs(content):
-        if d.name == mod_id:
-            return d
+    from .mod_library import discover_mods
+
+    for mod in discover_mods(steam_path).mods:
+        if mod.mod_id == mod_id:
+            return mod.path
     return None
 
 
@@ -82,7 +83,7 @@ def load_project_context(
 
         import_community_glossary(conn, community)
     rule = community.mod_rules.get(mod_id) if community else None
-    scan = scan_mod(mod_dir, game_languages(), rule=rule)
+    scan = scan_mod(mod_dir, game_languages(), rule=rule, mod_id=mod_id)
     # авто-подсказка источника: самый полный язык
     best = (
         scan.source_language_hint

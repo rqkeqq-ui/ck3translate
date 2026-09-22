@@ -29,16 +29,9 @@ PATCH_MOD = "patch_mod"
 
 def pdx_mod_dir() -> Path:
     """Пользовательская папка модов CK3 (для патч-модов)."""
-    override = os.environ.get("CK3LOC_PDX_MOD_DIR")
-    if override:
-        return Path(override)
-    if sys.platform == "linux":
-        return (Path.home() / ".local/share/Paradox Interactive"
-                / "Crusader Kings III" / "mod")
-    return (
-        Path.home() / "Documents" / "Paradox Interactive"
-        / "Crusader Kings III" / "mod"
-    )
+    from .mod_library import local_mods_dir
+
+    return local_mods_dir()
 
 
 @dataclass

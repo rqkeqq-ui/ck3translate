@@ -16,6 +16,8 @@ DEFAULTS: dict = {
     "write_mode": "in_mod",       # in_mod | patch_mod
     "build_mode": "auto",         # auto | full | delta
     "provider": "google",
+    "local_mods_path": "",
+    "skipped_update_version": "",
     "steam_path": "",             # пусто — определять автоматически
     "theme": "dark",              # dark | light
     "scan_on_start": True,

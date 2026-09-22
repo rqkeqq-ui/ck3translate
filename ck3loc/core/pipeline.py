@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .bundle import key_type
-from .glossary_seed import load_glossary
+from .glossary_seed import load_glossary, relevant_glossary
 from .ops import ProjectContext
 from .scanner import semantic_hash
 from .status import MACHINE
@@ -128,7 +128,7 @@ def translate_rows(
         try:
             results = provider.translate_batch(
                 texts, source_lang, target_lang,
-                glossary=glossary, context_types=types,
+                glossary=relevant_glossary(glossary, [r["source"] for r in batch]), context_types=types,
             )
         except Exception as e:  # noqa: BLE001 — ошибка провайдера не роняет очередь
             for r in batch:

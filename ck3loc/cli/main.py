@@ -20,22 +20,17 @@ from ck3loc.core.steam import (
 from ck3loc.core.vanilla import find_ck3_game_dir, game_languages
 
 
-def _resolve_mods(steam_path: str | None) -> tuple[list[Path], list[str]]:
-    override = Path(steam_path) if steam_path else None
-    root = find_steam_root(override)
-    if root is None:
-        print("Steam не найден. Укажите путь: --steam <папка Steam>")
-        return [], []
-    content = workshop_content_dirs(root)
-    if not content:
-        print(f"Папка мастерской CK3 не найдена в библиотеках Steam ({root}).")
-        return [], []
-    langs = game_languages()
-    return list_workshop_mod_dirs(content), langs
+def _resolve_mods(steam_path: str | None):
+    from ck3loc.core.mod_library import discover_mods
+
+    library = discover_mods(Path(steam_path) if steam_path else None)
+    for warning in library.warnings:
+        print(warning)
+    return library.mods, game_languages(), library.complete
 
 
 def cmd_scan(args: argparse.Namespace) -> int:
-    mod_dirs, langs = _resolve_mods(args.steam)
+    mod_dirs, langs, complete = _resolve_mods(args.steam)
     if not mod_dirs:
         return 1
     source, target = args.source, args.target
@@ -49,7 +44,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
     with_errors = 0
     rows = []
     for mod_dir in mod_dirs:
-        scan = scan_mod(mod_dir, langs)
+        scan = scan_mod(mod_dir.path, langs, mod_id=mod_dir.mod_id)
         if not scan.has_localization:
             rows.append((scan.mod_id, scan.name, 0, "-", "нет локализации"))
             continue
@@ -93,12 +88,12 @@ def cmd_scan(args: argparse.Namespace) -> int:
 
 
 def cmd_report(args: argparse.Namespace) -> int:
-    mod_dirs, langs = _resolve_mods(args.steam)
-    match = [d for d in mod_dirs if d.name == args.mod_id]
+    mod_dirs, langs, complete = _resolve_mods(args.steam)
+    match = [d for d in mod_dirs if d.mod_id == args.mod_id]
     if not match:
-        print(f"Мод {args.mod_id} не найден в мастерской.")
+        print(f"Мод {args.mod_id} не найден в библиотеке.")
         return 1
-    scan = scan_mod(match[0], langs)
+    scan = scan_mod(match[0].path, langs, mod_id=match[0].mod_id)
     d = scan.descriptor
     acf = read_workshop_acf()
     print(f"Мод: {scan.name}  (ID {scan.mod_id})")
@@ -158,11 +153,11 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
     from ck3loc.core import db
     from ck3loc.core.store import mark_missing_mods, record_mod, take_snapshot
 
-    mod_dirs, langs = _resolve_mods(args.steam)
+    mod_dirs, langs, complete = _resolve_mods(args.steam)
     if not mod_dirs:
         return 1
     if args.mod_id:
-        mod_dirs = [d for d in mod_dirs if d.name == args.mod_id]
+        mod_dirs = [d for d in mod_dirs if d.mod_id == args.mod_id]
         if not mod_dirs:
             print(f"Мод {args.mod_id} не найден.")
             return 1
@@ -170,7 +165,7 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
     acf = read_workshop_acf()
     new_count = 0
     for mod_dir in mod_dirs:
-        scan = scan_mod(mod_dir, langs)
+        scan = scan_mod(mod_dir.path, langs, mod_id=mod_dir.mod_id)
         entry = acf.get(scan.mod_id)
         t_upd = int(entry.time_updated) if entry and entry.time_updated else 0
         record_mod(conn, scan, steam_time_updated=t_upd)
@@ -180,7 +175,7 @@ def cmd_snapshot(args: argparse.Namespace) -> int:
                 new_count += 1
                 print(f"  снимок: {scan.name} ({scan.mod_id})")
     if not args.mod_id:
-        gone = mark_missing_mods(conn, {d.name for d in mod_dirs})
+        gone = mark_missing_mods(conn, {d.mod_id for d in mod_dirs}) if complete else []
         for g in gone:
             print(f"  больше не установлен: {g} (данные сохранены)")
     print(f"Готово: новых снимков {new_count} из {len(mod_dirs)} модов.")
@@ -459,7 +454,7 @@ def cmd_batch(args: argparse.Namespace) -> int:
     from ck3loc.providers.base import ProviderError
     from ck3loc.providers.registry import make_provider
 
-    mod_dirs, langs = _resolve_mods(args.steam)
+    mod_dirs, langs, complete = _resolve_mods(args.steam)
     if not mod_dirs:
         return 1
     conn = db.connect()
@@ -473,7 +468,7 @@ def cmd_batch(args: argparse.Namespace) -> int:
 
     queue = []
     for mod_dir in mod_dirs:
-        scan = scan_mod(mod_dir, langs)
+        scan = scan_mod(mod_dir.path, langs, mod_id=mod_dir.mod_id)
         if not scan.has_localization:
             continue
         src = scan.best_source_language(args.source) or args.source
@@ -484,15 +479,15 @@ def cmd_batch(args: argparse.Namespace) -> int:
         queue = queue[: args.limit]
     print(f"Модов без языка {args.target}: {len(queue)}")
     for i, mod_dir in enumerate(queue, start=1):
-        ctx = load_project_context(conn, mod_dir.name, args.source,
-                                   args.target, mod_dir=mod_dir)
+        ctx = load_project_context(conn, mod_dir.mod_id, args.source,
+                                   args.target, mod_dir=mod_dir.path)
         rows = rows_to_translate(ctx, "missing")
         print(f"[{i}/{len(queue)}] {ctx.scan.name}: {len(rows)} строк")
         stats = translate_rows(ctx, rows, provider, vanilla_lookup=vl)
         print(f"    ваниль {stats.from_vanilla}, память {stats.from_memory}, "
               f"API {stats.from_api}, ошибок {len(stats.failed)}")
-        ctx = load_project_context(conn, mod_dir.name, args.source,
-                                   args.target, mod_dir=mod_dir)
+        ctx = load_project_context(conn, mod_dir.mod_id, args.source,
+                                   args.target, mod_dir=mod_dir.path)
         plan = build_write_plan(ctx.scan, ctx.project, ctx.units)
         if plan.total_keys:
             apply_write_plan(conn, ctx.project_id, plan, ctx.scan, ctx.units)

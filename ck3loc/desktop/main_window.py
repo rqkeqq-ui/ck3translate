@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from ck3loc.core import settings
+from ck3loc.core.i18n import tr
 from ck3loc.desktop.glossary_page import GlossaryPage
 from ck3loc.desktop.library_page import LibraryPage
 from ck3loc.desktop.mod_page import ModPage
@@ -91,6 +92,7 @@ class MainWindow(QMainWindow):
         self.mod_page.request_translate.connect(self.open_translate)
         self.glossary = GlossaryPage(self.theme)
         self.settings_page = SettingsPage(self.theme)
+        self.settings_page.rescan_requested.connect(self.start_scan)
         self.settings_page.theme_changed.connect(self.apply_theme)
         self.settings_page.langs_changed.connect(self._langs_changed)
         self.settings_page.ui_language_changed.connect(self.change_ui_language)
@@ -242,7 +244,7 @@ class MainWindow(QMainWindow):
         self.progress.hide()
         if not rows:
             self.status_label.setText(
-                "Моды не найдены. Проверьте путь к Steam в Настройках."
+                tr("Моды не найдены. Проверьте пути к Steam и локальным модам в Настройках.")
             )
             return
         with_loc = [r for r in rows if r.has_loc]

@@ -48,14 +48,31 @@ def main() -> int:
     if not settings.get("ui_lang") and not smoke_test:
         _first_run(app)
 
+    from ck3loc.core import db
+    from ck3loc.core.glossary_seed import seed_glossary
+    conn = db.connect()
+    try:
+        seed_glossary(conn)
+    finally:
+        conn.close()
     win = MainWindow()
     win.show()
     if smoke_test:
         QTimer.singleShot(1000, win.close)
     else:
         from ck3loc.desktop.community_prompt import show_community_prompt
+        from ck3loc.desktop.update_prompt import UpdateController
 
-        QTimer.singleShot(0, lambda: show_community_prompt(win))
+        win.updates = UpdateController(win)
+        win.settings_page.update_requested.connect(lambda: win.updates.check(manual=True))
+        app.aboutToQuit.connect(win.updates.shutdown)
+
+        def startup():
+            show_community_prompt(win)
+            if win.isVisible():
+                win.updates.check()
+
+        QTimer.singleShot(0, startup)
     return app.exec()
 
 
