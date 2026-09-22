@@ -1,34 +1,23 @@
-"""Bundled CK3 terminology and bounded, relevant translation hints."""
+"""Workshop terminology import and bounded, relevant translation hints."""
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 
 
 def seed_glossary(conn) -> int:
-    terms = json.loads((Path(__file__).resolve().parent.parent / "data/glossary.json").read_text(encoding="utf-8"))
-    added = 0
-    for term in terms:
-        rows = conn.execute(
-            "SELECT id, origin FROM glossary_terms WHERE level='global' AND source_lang=? AND target_lang=? AND source_term=?",
-            (term['source_lang'], term['target_lang'], term['source_term']),
-        ).fetchall()
-        if any(row['origin'] == 'user' for row in rows):
-            continue
-        builtin = next((row for row in rows if row['origin'] == 'builtin'), None)
-        if builtin:
-            conn.execute("UPDATE glossary_terms SET target_term=?, mode=?, note=? WHERE id=?",
-                         (term['target_term'], term['mode'], term['note'], builtin['id']))
-        elif not rows:
-            conn.execute(
-                "INSERT INTO glossary_terms (level, source_lang, target_lang, source_term, target_term, mode, note, origin) "
-                "VALUES ('global', ?, ?, ?, ?, ?, ?, 'builtin')",
-                tuple(term[k] for k in ('source_lang', 'target_lang', 'source_term', 'target_term', 'mode', 'note')),
-            )
-            added += 1
-    conn.commit()
-    return added
+    """Import terminology only from an installed, enabled Workshop database."""
+    from . import settings
+    from .community_db import discover_community_database, import_community_glossary
+
+    cfg = settings.load()
+    if not cfg.get("community_db_enabled", True):
+        return 0
+    steam = cfg.get("steam_path", "")
+    result = discover_community_database(Path(steam) if steam else None)
+    if result.state != "ready" or result.database is None:
+        return 0
+    return import_community_glossary(conn, result.database).added
 
 
 def relevant_glossary(terms: list[tuple[str, str]], texts: list[str], limit: int = 80, max_chars: int = 6000) -> list[tuple[str, str]]:

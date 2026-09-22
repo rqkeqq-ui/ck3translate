@@ -71,7 +71,7 @@ class GlossaryPage(QWidget):
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self.refresh)
         tools.addWidget(self.search, stretch=1)
-        btn_seed = QPushButton("Загрузить стартовый словарь EN→RU")
+        btn_seed = QPushButton("Загрузить словарь из Workshop")
         btn_seed.clicked.connect(self._seed_clicked)
         tools.addWidget(btn_seed)
         btn_del = QPushButton("Удалить выбранное")
@@ -197,7 +197,7 @@ class GlossaryPage(QWidget):
         self.refresh()
 
     def seed(self) -> int:
-        """Загрузить стартовый словарь. Возвращает число добавленных терминов."""
+        """Загрузить установленный словарь Workshop. Возвращает число новых терминов."""
         n = seed_glossary(self.conn)
         self.refresh()
         return n
@@ -207,7 +207,7 @@ class GlossaryPage(QWidget):
         QMessageBox.information(
             self, "Глоссарий",
             f"Добавлено терминов: {n}." if n
-            else "Стартовый словарь уже загружен.",
+            else tr("Нет новых терминов. Проверьте подписку Workshop и выполните сканирование."),
         )
 
     def close_db(self):

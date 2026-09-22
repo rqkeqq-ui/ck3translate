@@ -197,5 +197,7 @@
  "Не удалось проверить обновления. Проверьте подключение и повторите позже.": "No se pudieron comprobar las actualizaciones. Revisa la conexión e inténtalo más tarde.",
  "Моды не найдены. Проверьте пути к Steam и локальным модам в Настройках.": "No se encontraron mods. Revisa las rutas de Steam y mods locales en Ajustes.",
  "Мод {mod_id} не найден в библиотеке.": "El mod {mod_id} no está en la biblioteca.",
- "Термины помогают сохранять единообразие перевода с учётом контекста. Глобальный уровень действует для всех модов. Показывается текущая языковая пара из Настроек.": "Los términos ayudan a traducir de forma coherente según el contexto. Los términos globales se aplican a todos los mods. Se muestra el par de idiomas de Ajustes."
+ "Термины помогают сохранять единообразие перевода с учётом контекста. Глобальный уровень действует для всех модов. Показывается текущая языковая пара из Настроек.": "Los términos ayudan a traducir de forma coherente según el contexto. Los términos globales se aplican a todos los mods. Se muestra el par de idiomas de Ajustes.",
+ "Загрузить словарь из Workshop": "Cargar glosario de Workshop",
+ "Нет новых терминов. Проверьте подписку Workshop и выполните сканирование.": "No hay términos nuevos. Revisa tu suscripción a Workshop y escanea la biblioteca."
 }
