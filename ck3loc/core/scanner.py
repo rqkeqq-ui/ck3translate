@@ -247,10 +247,11 @@ def scan_mod(
     mod_dir: Path,
     known_languages: list[str] | None = None,
     rule=None,
+    *, mod_id: str | None = None,
 ) -> ModScan:
     mod_dir = Path(mod_dir)
     scan = ModScan(
-        mod_id=mod_dir.name,
+        mod_id=mod_id or mod_dir.name,
         mod_dir=mod_dir,
         descriptor=Descriptor.load(mod_dir),
         source_language_hint=(getattr(rule, "source_language", "") if rule else ""),

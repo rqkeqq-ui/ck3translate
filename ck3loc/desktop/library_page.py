@@ -260,7 +260,8 @@ class LibraryPage(QWidget):
         self.table.setRowCount(len(shown))
         for i, r in enumerate(shown):
             prefix = "★  " if r.tracked else ("⇄  " if r.translates else "")
-            name_item = SortItem(prefix + r.name, r.name.lower())
+            origin = "Local" if r.mod_id.startswith("local_") else "Workshop"
+            name_item = SortItem(prefix + f"[{origin}] " + r.name, r.name.lower())
             name_item.setData(Qt.ItemDataRole.UserRole, r.mod_id)
             if show_covers:
                 icon = self._cover_icon(r.mod_id)
@@ -281,7 +282,7 @@ class LibraryPage(QWidget):
             self.table.setItem(i, 0, name_item)
 
             id_item = SortItem(
-                r.mod_id, int(r.mod_id) if r.mod_id.isdigit() else 0
+                r.mod_id if r.mod_id.isdigit() else "Local", int(r.mod_id) if r.mod_id.isdigit() else 0
             )
             id_item.setForeground(QColor(c["text_dim"]))
             id_item.setTextAlignment(

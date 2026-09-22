@@ -31,13 +31,15 @@ from ck3loc.core.community_db import (
     workshop_page_url,
 )
 from ck3loc.core.db import backups_dir, data_dir
-from ck3loc.core.i18n import DEFAULT_UI_LANG, available_languages
+from ck3loc.core.i18n import DEFAULT_UI_LANG, available_languages, tr
 from ck3loc.core.vanilla import find_ck3_game_dir, game_languages
 from ck3loc.desktop.widgets import Card, field_row
 from ck3loc.providers.registry import PROVIDERS, get_api_key, set_api_key
 
 
 class SettingsPage(QWidget):
+    rescan_requested = Signal()
+    update_requested = Signal()
     theme_changed = Signal(str)
     langs_changed = Signal()
     ui_language_changed = Signal(str)
@@ -260,6 +262,29 @@ class SettingsPage(QWidget):
         sl.addWidget(btn_browse)
         paths.add(field_row("Папка Steam", steam_row))
 
+        from ck3loc.core.mod_library import local_mods_dir
+        local_row = QWidget()
+        ll = QHBoxLayout(local_row)
+        ll.setContentsMargins(0, 0, 0, 0)
+        self.local_mods_path = QLineEdit(cfg.get("local_mods_path", ""))
+        self.local_mods_path.setPlaceholderText(str(local_mods_dir()))
+        self.local_mods_path.editingFinished.connect(self._save_local_path)
+        ll.addWidget(self.local_mods_path, stretch=1)
+        browse_local = QPushButton("Выбрать…")
+        browse_local.clicked.connect(self._pick_local)
+        ll.addWidget(browse_local)
+        reset_local = QPushButton("Автоматически")
+        reset_local.clicked.connect(self._reset_local)
+        ll.addWidget(reset_local)
+        paths.add(field_row("Папка локальных модов CK3", local_row,
+                            "Выберите папку mod с модами и файлами .mod. Steam для локальных модов не требуется."))
+        self.rescan_button = QPushButton("Пересканировать библиотеку")
+        self.rescan_button.clicked.connect(self.rescan_requested.emit)
+        paths.add(self.rescan_button)
+        check_update = QPushButton("Проверить обновления")
+        check_update.clicked.connect(self.update_requested.emit)
+        paths.add(check_update)
+
         game = find_ck3_game_dir()
         game_label = QLabel(str(game) if game else "игра не найдена")
         game_label.setProperty("role", "dim")
@@ -416,6 +441,27 @@ class SettingsPage(QWidget):
         if path:
             self.steam_path.setText(path)
             settings.set_value("steam_path", path)
+
+    def _save_local_path(self):
+        from ck3loc.core.mod_library import local_mods_dir
+        path = self.local_mods_path.text().strip()
+        if path and not Path(path).expanduser().is_dir():
+            QMessageBox.warning(self, tr("Папка локальных модов CK3"), tr("Папка не найдена. Выберите существующий каталог."))
+            return
+        settings.set_value("local_mods_path", path)
+        self.local_mods_path.setPlaceholderText(str(local_mods_dir()))
+        self.rescan_button.setText(tr("Путь сохранён — пересканировать библиотеку"))
+
+    def _pick_local(self):
+        from ck3loc.core.mod_library import local_mods_dir
+        path = QFileDialog.getExistingDirectory(self, tr("Папка локальных модов CK3"), str(local_mods_dir()))
+        if path:
+            self.local_mods_path.setText(path)
+            self._save_local_path()
+
+    def _reset_local(self):
+        self.local_mods_path.clear()
+        self._save_local_path()
 
     def _open_folder(self, path: Path):
         from PySide6.QtCore import QUrl

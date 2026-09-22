@@ -437,8 +437,8 @@ class ModPage(QWidget):
             mod_dir=mod_dir,
         )
         if self.ctx is None:
-            QMessageBox.warning(self, "Мод не найден",
-                                f"Мод {mod_id} не найден в мастерской.")
+            QMessageBox.warning(self, tr("Мод не найден"),
+                                tr_format("Мод {mod_id} не найден в библиотеке.", mod_id=mod_id))
             return False
         self.refresh()
         return True

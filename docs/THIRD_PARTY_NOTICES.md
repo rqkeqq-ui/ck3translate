@@ -17,5 +17,8 @@ and https://code.qt.io/cgit/pyside/pyside-setup.git/ . Installed package license
 are included under THIRD_PARTY_LICENSES in release bundles.
 
 Crusader Kings III and its assets belong to their respective rights holders.
-Game files and third-party mods are not distributed with this application.
+No full game localization files or third-party mods are distributed. The terminology
+reference contains selected short labels matched by localization key in CK3 1.19.0.6.
+Paradox game terminology remains attributable to its respective rights holders; the
+MIT software license does not claim ownership of game content.
 This project is not affiliated with Paradox Interactive or Valve.

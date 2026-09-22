@@ -7,6 +7,7 @@ from PyInstaller.utils.hooks import collect_submodules
 from PyInstaller.utils.hooks import copy_metadata
 
 datas = [(str(ROOT / 'ck3loc/lang'), 'ck3loc/lang'), (str(ROOT / 'ck3loc/community_db_config.json'), 'ck3loc')]
+datas += [(str(ROOT / 'ck3loc/data'), 'ck3loc/data')]
 hiddenimports = []
 datas += copy_metadata('keyring')
 hiddenimports += collect_submodules('keyring.backends')

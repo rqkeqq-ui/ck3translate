@@ -40,7 +40,7 @@ class GlossaryPage(QWidget):
         v.setSpacing(12)
 
         hint = QLabel(
-            "Термины передаются переводчику как обязательные соответствия. "
+            "Термины помогают сохранять единообразие перевода с учётом контекста. "
             "Глобальный уровень действует для всех модов. Показывается "
             "текущая языковая пара из Настроек."
         )
@@ -109,9 +109,14 @@ class GlossaryPage(QWidget):
         rows = self.conn.execute(
             """SELECT * FROM glossary_terms
                WHERE source_lang=? AND target_lang=?
-               ORDER BY level, source_term""",
+               ORDER BY CASE origin WHEN 'user' THEN 2 WHEN 'builtin' THEN 0 ELSE 1 END, id""",
             (self.source_lang, self.target_lang),
         ).fetchall()
+        effective = {}
+        for row in rows:
+            effective[(row['level'], row['mod_id'], row['source_term'].casefold())] = row
+        rows = sorted(effective.values(), key=lambda row: (row['level'], row['source_term'].casefold()))
+        total = len(rows)
         rows = [
             r for r in rows
             if not query or query in r["source_term"].lower()
@@ -134,11 +139,6 @@ class GlossaryPage(QWidget):
             lvl_item.setFlags(lvl_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
             self.table.setItem(i, 3, lvl_item)
         self.table.blockSignals(False)
-        total = self.conn.execute(
-            """SELECT COUNT(*) AS n FROM glossary_terms
-               WHERE source_lang=? AND target_lang=?""",
-            (self.source_lang, self.target_lang),
-        ).fetchone()["n"]
         self.count.setText(
             tr_format("{source} → {target}: {total} терминов",
                       source=self.source_lang, target=self.target_lang, total=total)

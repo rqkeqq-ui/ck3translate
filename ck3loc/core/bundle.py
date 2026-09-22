@@ -91,10 +91,12 @@ def export_jsonl(
         )
     out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
+    from .glossary_seed import relevant_glossary
+    glossary = relevant_glossary(glossary or [], [r["source"] for r in rows])
     glossary_block = ""
     if glossary:
         terms = "\n".join(f"  {s} → {t}" for s, t in glossary)
-        glossary_block = f"\nГлоссарий (обязательные соответствия):\n{terms}\n"
+        glossary_block = f"\nГлоссарий (рекомендуемые термины с учётом контекста):\n{terms}\n"
     prompt = PROMPT_TEMPLATE.format(
         source_lang=source_lang,
         target_lang=target_lang,

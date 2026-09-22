@@ -1,41 +1,39 @@
 ## English
 
-### What's new in 0.1.1
+### New in 0.2.0
 
-- Community Database now links to [Steam Workshop item 3799038632](https://steamcommunity.com/sharedfiles/filedetails/?id=3799038632).
-- If the database is missing, a startup reminder offers to open Workshop, check downloaded files or continue without it. The reminder can be disabled.
-- Fixed the English mod-page filter and translated additional interface labels.
-- New English and Russian user guides are included in every archive.
+- **Local mod support:** scan Workshop and local CK3 mods together, including launcher `.mod` links to external folders. Choose your local mod folder in Settings; local mods work without Steam.
+- **Release notifications:** Update opens GitHub, Next time reminds you on the next launch, and Skip this version hides only that release. Manual checks are available in Settings.
+- **Expanded glossary:** 400 concepts, 2,400 English → Russian, German, French, Spanish, Simplified Chinese and Korean translations. Included offline; user edits are preserved and prompts include only relevant terms.
+- Windows detects redirected Documents folders. Local copies keep separate translation histories; duplicate links to the same directory are merged.
 
 **Supported interface languages: English, Russian, German, French, Spanish, Simplified Chinese, and Korean.**
 
-Download your platform's archive and extract **all files**. No Python installation required.
+Download and extract the **entire archive** into a new folder. No Python installation needed. Translation data stays in your user profile. Existing Workshop histories keep their IDs; moving local mods creates a new identity, preserving old history in the database.
 
-| Platform | File suffix | Open |
+| Platform | Archive | Open |
 | --- | --- | --- |
 | Windows x64 | `windows-x86_64.zip` | `CK3LocalizationManager.exe` |
 | Linux x64 | `linux-x86_64.tar.gz` | `CK3LocalizationManager` |
 | macOS Apple Silicon | `darwin-arm64.zip` | `.app` |
 
-SHA-256 files are included. Linux builds target Ubuntu 22.04+ with a graphical desktop and system graphics libraries. macOS targets macOS 14+ on Apple Silicon; there is no Intel build. Binaries have no commercial publisher signature, and the macOS app is not notarized. Linux/macOS builds remain preliminary for real game-library use.
+SHA-256 files are included. Linux targets Ubuntu 22.04+ with a graphical desktop and system graphics libraries. macOS requires macOS 14+ on Apple Silicon; no Intel build. Binaries are unsigned by a commercial publisher; macOS is not notarized. Linux/macOS game-library use remains preliminary despite native build and launch checks.
 
-**Do not enable the Community Database in a playset.** Subscribing is optional; the app works without it.
+[Optional Community Database](https://steamcommunity.com/sharedfiles/filedetails/?id=3799038632): do not enable it in a playset. The expanded glossary is bundled even without subscribing. Updates are downloaded manually from GitHub, not installed automatically.
 
 ---
 
 ## Русский
 
-### Что нового в 0.1.1
+### Новое в 0.2.0
 
-- Подключён [Workshop ID 3799038632](https://steamcommunity.com/sharedfiles/filedetails/?id=3799038632).
-- Если база не найдена, окно при запуске предлагает открыть Workshop, проверить загруженные файлы или продолжить без базы. Напоминание можно отключить.
-- Исправлен фильтр карточки мода на английском и переведены дополнительные элементы интерфейса.
-- В каждый архив включены пользовательские руководства на английском и русском.
+- **Локальные моды:** единая библиотека с Workshop, ссылки `.mod` на внешние каталоги, ручной выбор папки. Steam для локальных модов не требуется.
+- **Проверка обновлений:** «Обновить» открывает GitHub, «В следующий раз» напоминает при новом запуске, «Пропустить текущую версию» скрывает только этот релиз. Ручная проверка — в Настройках.
+- **Глоссарий:** 400 понятий и 2400 переводов с английского на русский, немецкий, французский, испанский, упрощённый китайский и корейский. Доступен без подписки; правки пользователя сохраняются. В запрос передаются только подходящие термины.
+- Windows учитывает перенесённую папку Documents. Разные локальные копии имеют отдельную историю; повторные ссылки на одну папку не создают дубликаты.
 
-**Языки интерфейса: английский, русский, немецкий, французский, испанский, упрощённый китайский и корейский.**
+Полностью распакуйте архив своей платформы в новую папку. Python не нужен. Переводы остаются в профиле пользователя. История Workshop сохраняет прежние ID; перенос локального мода создаёт новую запись с сохранением старой истории.
 
-Скачайте архив своей платформы и распакуйте **все файлы**. Python не нужен. Windows x64: `.exe`; Linux x64: исполняемый файл; macOS Apple Silicon: `.app`. Рядом опубликованы SHA-256.
+Windows x64: `.exe`; Linux x64: Ubuntu 22.04+ с графическим рабочим столом; macOS: 14+ Apple Silicon, без Intel и без нотарификации. Linux/macOS пока предварительные для реальных игровых библиотек. Рядом с архивами — SHA-256.
 
-Linux: Ubuntu 22.04+ с графическим рабочим столом и системными графическими библиотеками. macOS: версия 14+ и Apple Silicon, без сборки Intel и без нотарификации Apple. У бинарников нет коммерческой подписи издателя. Linux/macOS остаются предварительными для работы с реальной игровой библиотекой.
-
-**Community Database не нужно включать в playset.** Подписка необязательна.
+Community Database не нужно включать в playset. Подписка необязательна. Автоустановки обновления нет: кнопка открывает страницу скачивания GitHub.

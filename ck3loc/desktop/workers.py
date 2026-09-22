@@ -82,19 +82,10 @@ class ScanWorker(QThread):
         conn = db.connect()
         try:
             root = find_steam_root(Path(self.steam_path) if self.steam_path else None)
-            if root is None:
-                self.note.emit(
-                    "Steam не найден. Укажите путь в Настройках."
-                )
-                self.finished_rows.emit([])
-                return
-            content = workshop_content_dirs(root)
-            if not content:
-                self.note.emit(
-                    "Папка мастерской CK3 не найдена в библиотеках Steam."
-                )
-                self.finished_rows.emit([])
-                return
+            from ck3loc.core.mod_library import discover_mods
+            library = discover_mods(Path(self.steam_path) if self.steam_path else None)
+            for warning in library.warnings:
+                self.note.emit(warning)
             cfg = settings.load()
             community_result = discover_community_database(
                 root, enabled=bool(cfg.get("community_db_enabled", True))
@@ -130,9 +121,9 @@ class ScanWorker(QThread):
             }:
                 clear_community_glossary(conn)
 
-            mod_dirs = list_workshop_mod_dirs(content)
+            mod_dirs = library.mods
             if community_root is not None:
-                mod_dirs = [d for d in mod_dirs if d.resolve() != community_root]
+                mod_dirs = [d for d in mod_dirs if d.path.resolve() != community_root]
             langs = game_languages()
             acf = read_workshop_acf(root)
             tracked = {
@@ -146,8 +137,8 @@ class ScanWorker(QThread):
             for i, mod_dir in enumerate(mod_dirs, start=1):
                 if self._stop:
                     break
-                rule = community.mod_rules.get(mod_dir.name) if community else None
-                scan = scan_mod(mod_dir, langs, rule=rule)
+                rule = community.mod_rules.get(mod_dir.mod_id) if community else None
+                scan = scan_mod(mod_dir.path, langs, rule=rule, mod_id=mod_dir.mod_id)
                 self.progress.emit(i, total, scan.name)
                 entry = acf.get(scan.mod_id)
                 t_upd = int(entry.time_updated) if entry and entry.time_updated else 0
@@ -188,7 +179,7 @@ class ScanWorker(QThread):
                                    cov, state, True, updated, errors,
                                    scan.mod_id in tracked, source_keys=of,
                                    updated_ts=t_upd, source_lang=src))
-            gone = mark_missing_mods(conn, {d.name for d in mod_dirs})
+            gone = mark_missing_mods(conn, {d.mod_id for d in mod_dirs}) if library.complete and not self._stop else []
             for g in gone:
                 self.note.emit(
                     f"Мод {g} больше не установлен — перевод и история "
@@ -446,11 +437,15 @@ class BatchWorker(QThread):
                 if community_result.state == "ready" else None
             )
             queue = []
-            for mod_dir in list_workshop_mod_dirs(workshop_content_dirs()):
-                if community and mod_dir.resolve() == community.root.resolve():
+            from ck3loc.core.mod_library import discover_mods
+            library = discover_mods()
+            for warning in library.warnings:
+                self.line.emit(warning)
+            for mod_dir in library.mods:
+                if community and mod_dir.path.resolve() == community.root.resolve():
                     continue
-                rule = community.mod_rules.get(mod_dir.name) if community else None
-                scan = scan_mod(mod_dir, langs, rule=rule)
+                rule = community.mod_rules.get(mod_dir.mod_id) if community else None
+                scan = scan_mod(mod_dir.path, langs, rule=rule, mod_id=mod_dir.mod_id)
                 if not scan.has_localization:
                     continue
                 src = (
@@ -471,8 +466,8 @@ class BatchWorker(QThread):
                     self.line.emit("Остановлено пользователем.")
                     break
                 self.progress.emit(i, len(queue))
-                ctx = load_project_context(conn, mod_dir.name, self.source_lang,
-                                           self.target_lang, mod_dir=mod_dir)
+                ctx = load_project_context(conn, mod_dir.mod_id, self.source_lang,
+                                           self.target_lang, mod_dir=mod_dir.path)
                 if ctx is None:
                     self.line.emit(f"[{i}/{len(queue)}] мод больше не установлен")
                     continue
@@ -489,8 +484,8 @@ class BatchWorker(QThread):
                     f"· API {stats.from_api} · ошибок {len(stats.failed)}"
                 )
                 if self.write_after:
-                    ctx = load_project_context(conn, mod_dir.name, self.source_lang,
-                                               self.target_lang, mod_dir=mod_dir)
+                    ctx = load_project_context(conn, mod_dir.mod_id, self.source_lang,
+                                               self.target_lang, mod_dir=mod_dir.path)
                     plan = build_write_plan(ctx.scan, ctx.project, ctx.units)
                     if plan.total_keys:
                         apply_write_plan(conn, ctx.project_id, plan, ctx.scan,

@@ -76,3 +76,16 @@ Keep a backup of this data folder. API keys remain in the system keyring. Do not
 ## Need help?
 
 Report problems in [GitHub Issues](https://github.com/rqkeqq-ui/ck3translate/issues). Include your operating system, app version, what you tried and the error message. Never include API keys. If a folder cannot be detected, check the configured Steam path first.
+
+
+## Local mods and custom folders (0.2.0)
+
+Open Settings → **CK3 local mods folder**. Choose the `mod` directory containing your mods and launcher `.mod` files, then click **Rescan library**. **Automatic** restores the detected location. Windows uses your actual Documents location, including redirected folders. Steam is optional for local mods.
+
+The library combines Workshop and local mods, marked `[Workshop]` or `[Local]`. Launcher `.mod` links can point to mods outside this directory. Generated translation patches and the Community Database are not treated as source mods. Separate copies keep separate translation histories. Moving a local mod creates a new library identity; the old history remains saved. This does not add automatic playset management.
+
+## Updates and terminology (0.2.0)
+
+The app checks GitHub for stable releases in the background. **Update** opens the release page for manual download; extract the complete archive into a new folder. **Next time** reminds you on the next launch. **Skip this version** hides only that version. Settings → **Check for updates** can show skipped releases too. Your translation data is stored separately from the executable.
+
+The bundled glossary contains 400 concepts with 2,400 English → Russian/German/French/Spanish/Simplified Chinese/Korean translations, matched by localization keys in CK3 1.19.0.6. Select your translation language in Settings to view that pair. Terms are suggestions that need context and grammatical adaptation. Only relevant terms are included in translation prompts, with a size limit. Your edits take priority over bundled and community updates. Workshop is optional; its downloaded data is refreshed when you scan.

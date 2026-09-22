@@ -375,6 +375,14 @@ def import_community_glossary(conn, database: CommunityDatabase) -> GlossaryImpo
             if any(row["origin"] == "user" for row in rows):
                 skipped += 1
                 continue
+            if any(row["origin"] == "builtin" and row["target_term"] == term.target_term
+                   and row["mode"] == term.mode for row in rows):
+                conn.execute(
+                    "DELETE FROM glossary_terms WHERE level='global' AND source_lang=? AND target_lang=? AND source_term=? AND origin=?",
+                    (term.source_lang, term.target_lang, term.source_term, origin),
+                )
+                skipped += 1
+                continue
             row = next((row for row in rows if row["origin"] == origin), None)
             if row is None:
                 conn.execute(
