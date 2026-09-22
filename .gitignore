@@ -44,3 +44,6 @@ Thumbs.db
 /docs/images/community-cover.svg
 /.github/validate_community_db.py
 !/.github/CK3LocalizationManager.spec
+
+# Terminology datasets are distributed through Workshop only.
+/ck3loc/data/

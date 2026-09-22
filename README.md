@@ -32,7 +32,7 @@ The app writes its own translation files while preserving the mod author's origi
 
 ### Consistent terms. Game syntax under control.
 
-Review the original and translated text side by side. A bundled glossary of **400 concepts in six translation languages** (2,400 English → Russian, German, French, Spanish, Simplified Chinese and Korean entries) and translation memory help keep your terminology consistent; vanilla references can be extracted from your installed CK3. Token validation detects missing variables, formatting tags and commands before writing. Always review the text and test it in game.
+Review the original and translated text side by side. A custom glossary and translation memory help keep your terminology consistent; vanilla references can be extracted from your installed CK3. Token validation detects missing variables, formatting tags and commands before writing. Always review the text and test it in game.
 
 ## See it in action
 
@@ -55,7 +55,7 @@ Windows x64, Linux x64 and macOS Apple Silicon are built separately. Check the r
 
 ## Community Database — growing with the community
 
-An optional dataset for links between mods and their translations, shared terminology and processing rules. The app includes the 400-concept multilingual glossary even without a subscription. Workshop supplies community data updates; translation links and mod rules are currently empty. Share verifiable suggestions through Issues.
+An optional dataset for links between mods and their translations, shared terminology and processing rules. Shared terminology is distributed through the Workshop subscription; the app itself does not include the dataset. Workshop supplies community data updates; translation links and mod rules are currently empty. Share verifiable suggestions through Issues.
 
 **[Subscribe to the Community Database on Steam Workshop](https://steamcommunity.com/sharedfiles/filedetails/?id=3799038632).** Wait for Steam to download the files, then open the app. If the database is missing, the startup reminder lets you open Workshop, check the download or continue without it. Subscribing is optional.
 

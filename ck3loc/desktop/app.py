@@ -48,13 +48,6 @@ def main() -> int:
     if not settings.get("ui_lang") and not smoke_test:
         _first_run(app)
 
-    from ck3loc.core import db
-    from ck3loc.core.glossary_seed import seed_glossary
-    conn = db.connect()
-    try:
-        seed_glossary(conn)
-    finally:
-        conn.close()
     win = MainWindow()
     win.show()
     if smoke_test:

@@ -4,7 +4,6 @@
 
 - **Local mod support:** scan Workshop and local CK3 mods together, including launcher `.mod` links to external folders. Choose your local mod folder in Settings; local mods work without Steam.
 - **Release notifications:** Update opens GitHub, Next time reminds you on the next launch, and Skip this version hides only that release. Manual checks are available in Settings.
-- **Expanded glossary:** 400 concepts, 2,400 English → Russian, German, French, Spanish, Simplified Chinese and Korean translations. Included offline; user edits are preserved and prompts include only relevant terms.
 - Windows detects redirected Documents folders. Local copies keep separate translation histories; duplicate links to the same directory are merged.
 
 **Supported interface languages: English, Russian, German, French, Spanish, Simplified Chinese, and Korean.**
@@ -19,7 +18,7 @@ Download and extract the **entire archive** into a new folder. No Python install
 
 SHA-256 files are included. Linux targets Ubuntu 22.04+ with a graphical desktop and system graphics libraries. macOS requires macOS 14+ on Apple Silicon; no Intel build. Binaries are unsigned by a commercial publisher; macOS is not notarized. Linux/macOS game-library use remains preliminary despite native build and launch checks.
 
-[Optional Community Database](https://steamcommunity.com/sharedfiles/filedetails/?id=3799038632): do not enable it in a playset. The expanded glossary is bundled even without subscribing. Updates are downloaded manually from GitHub, not installed automatically.
+[Optional Community Database](https://steamcommunity.com/sharedfiles/filedetails/?id=3799038632): do not enable it in a playset. Updates are downloaded manually from GitHub, not installed automatically.
 
 ---
 
@@ -29,7 +28,6 @@ SHA-256 files are included. Linux targets Ubuntu 22.04+ with a graphical desktop
 
 - **Локальные моды:** единая библиотека с Workshop, ссылки `.mod` на внешние каталоги, ручной выбор папки. Steam для локальных модов не требуется.
 - **Проверка обновлений:** «Обновить» открывает GitHub, «В следующий раз» напоминает при новом запуске, «Пропустить текущую версию» скрывает только этот релиз. Ручная проверка — в Настройках.
-- **Глоссарий:** 400 понятий и 2400 переводов с английского на русский, немецкий, французский, испанский, упрощённый китайский и корейский. Доступен без подписки; правки пользователя сохраняются. В запрос передаются только подходящие термины.
 - Windows учитывает перенесённую папку Documents. Разные локальные копии имеют отдельную историю; повторные ссылки на одну папку не создают дубликаты.
 
 Полностью распакуйте архив своей платформы в новую папку. Python не нужен. Переводы остаются в профиле пользователя. История Workshop сохраняет прежние ID; перенос локального мода создаёт новую запись с сохранением старой истории.
