@@ -54,8 +54,9 @@ def parse_response(payload) -> str:
 
 class GoogleFreeProvider(TranslationProvider):
     info = ProviderInfo("google_free", "Google Translate · бесплатно", needs_key=False, wave=1)
-    batch_size = 20
-    delay = 0.35       # пауза между строками, чтобы не получить временный бан по IP
+    # По строке на пачку: шлюз переводит по одной строке, а окно показывает ход после каждой.
+    batch_size = 1
+    delay = 0.35       # пауза между запросами — и между пачками, чтобы не получить бан по IP
     retries = 4
     # Параллельные запросы к публичному шлюзу живьём дают бан по IP (302 на google.com/sorry).
     max_workers = 1
@@ -64,6 +65,7 @@ class GoogleFreeProvider(TranslationProvider):
         super().__init__(api_key, **options)
         self._client = None
         self._client_lock = threading.Lock()
+        self._last_request: float | None = None
 
     def _http(self):
         """Одно соединение на задание: без нового TLS-рукопожатия (через прокси ~1,5 с) на каждую строку."""
@@ -76,16 +78,18 @@ class GoogleFreeProvider(TranslationProvider):
                         glossary=None, context_types=None):
         source, target = lang_code(source_lang), lang_code(target_lang)
         result = []
-        sent = 0
         for text in texts:
             if _NOTHING_TO_TRANSLATE.fullmatch(text):
                 result.append(text)
                 continue
-            if sent:
-                time.sleep(self.delay)
+            now = time.monotonic()
+            if self._last_request is not None and (wait := self.delay - (now - self._last_request)) > 0:
+                time.sleep(wait)
             head, core, tail = split_edges(text)
-            result.append(head + self._translate(core, source, target) + tail)
-            sent += 1
+            try:
+                result.append(head + self._translate(core, source, target) + tail)
+            finally:
+                self._last_request = time.monotonic()
         return result
 
     def _translate(self, text: str, source: str, target: str) -> str:

@@ -187,11 +187,12 @@ class ModPage(QWidget):
         actions = Card("Перевод")
         row1 = QHBoxLayout()
         row1.setSpacing(8)
-        self.btn_api = QPushButton("Перевести через API…")
+        self.btn_api = QPushButton("Перевести: Google, Bing, нейросеть…")
         self.btn_api.setProperty("accent", "true")
         self.btn_api.setToolTip(
-            "Google, Yandex, DeepL или нейросеть по ключу API.\n"
-            "Перед запуском покажет смету."
+            "Бесплатные переводчики (Google, Bing, Яндекс, Alibaba) без ключа,\n"
+            "нейросети по подписке ChatGPT или ключу API, свой локальный ИИ.\n"
+            "Перед запуском покажет, какие строки и кому уйдут."
         )
         self.btn_api.clicked.connect(
             lambda: self.request_translate.emit(self.mod_id)
@@ -324,13 +325,8 @@ class ModPage(QWidget):
         self.rows_table.setHorizontalHeaderLabels(
             ["Статус", "Ключ", "Источник", "Перевод", "Источник перевода"]
         )
-        h = self.rows_table.horizontalHeader()
-        h.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        h.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
-        h.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        h.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        self.rows_table.setColumnWidth(0, 150)
-        self.rows_table.setColumnWidth(1, 250)
+        from ck3loc.desktop.widgets import resizable_columns
+        resizable_columns(self.rows_table, {0: 150, 1: 250, 2: 360, 3: 360})
         setup_table(self.rows_table, row_height=28)
         self.rows_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.rows_table.currentCellChanged.connect(lambda *_: self._load_editor())
@@ -451,14 +447,8 @@ class ModPage(QWidget):
         self.diag_table.setHorizontalHeaderLabels(
             ["Уровень", "Файл", "Строка", "Проблема"]
         )
-        dh = self.diag_table.horizontalHeader()
-        dh.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
-        dh.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
-        dh.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
-        dh.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
-        self.diag_table.setColumnWidth(0, 145)
-        self.diag_table.setColumnWidth(1, 330)
-        self.diag_table.setColumnWidth(2, 70)
+        from ck3loc.desktop.widgets import resizable_columns
+        resizable_columns(self.diag_table, {0: 145, 1: 330, 2: 70})
         setup_table(self.diag_table)
         align_headers(self.diag_table, left_columns=(0, 1, 3),
                       right_columns=(2,))

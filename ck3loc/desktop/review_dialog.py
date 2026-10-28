@@ -31,13 +31,8 @@ class ReviewDialog(QDialog):
         groups, display_keys = groups or {}, display_keys or {}
         self.table = QTableWidget(len(rows), 8)
         self.table.setHorizontalHeaderLabels([tr(s) for s in ['Выбрать', 'Ключ', 'Источник', 'Текущий перевод', 'Новый перевод', 'Источник перевода', 'Состояние', 'Мод']])
-        header = self.table.horizontalHeader()
-        for column, mode in enumerate((QHeaderView.ResizeMode.ResizeToContents, QHeaderView.ResizeMode.Interactive,
-                                       QHeaderView.ResizeMode.Stretch, QHeaderView.ResizeMode.Stretch,
-                                       QHeaderView.ResizeMode.Stretch, QHeaderView.ResizeMode.ResizeToContents,
-                                       QHeaderView.ResizeMode.ResizeToContents)):
-            header.setSectionResizeMode(column, mode)
-        self.table.setColumnWidth(1, 220)
+        from ck3loc.desktop.widgets import resizable_columns
+        resizable_columns(self.table, {0: 70, 1: 220, 2: 300, 3: 260, 4: 300, 5: 140, 6: 130})
         self.table.verticalHeader().hide()
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
@@ -61,7 +56,6 @@ class ReviewDialog(QDialog):
         self.table.setColumnHidden(7, not groups)
         if groups:
             self.table.horizontalHeader().moveSection(7, 1)
-            self.table.horizontalHeader().setSectionResizeMode(7, QHeaderView.ResizeMode.Interactive)
             self.table.setColumnWidth(7, 220)
         self.table.itemChanged.connect(self.update_count)
         self.table.currentCellChanged.connect(self.show_details)

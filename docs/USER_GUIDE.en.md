@@ -57,7 +57,7 @@ This workflow needs no API key. A chat provider may impose usage limits or charg
 
 **ChatGPT subscription (preview):** choose "ChatGPT · subscription" and click **Sign in with ChatGPT** in the translation window or in Settings. Sign-in opens in your browser; the app never asks for your password. Pick a model from the list OpenAI returns for your account. Translation requires a paid ChatGPT plan: without one, sign-in still works but OpenAI does not allow plan usage. OpenAI currently refuses session renewal for all Sign in with ChatGPT apps, so after about an hour the app asks you to sign in again.
 
-Open a mod, choose **Translate via API…**, review the job and start it. Results are saved as a draft: review them, apply the lines you accept, then write to the game. Source text and relevant context are sent to the selected provider.
+Open a mod, choose **Translate: Google, Bing, AI…**, review the job and start it. Every option has a **?**: hover over it for a plain explanation. Progress is shown in the same window — "Translated N of M", and the **New translation** column fills in as answers arrive. When it finishes, lines get checkboxes: additions are checked, replacements of an existing translation are up to you (**Check all** checks them all). **Apply checked** makes them the active translation; **Detailed view…** opens a separate window with search and full texts. Then write to the game. Source text and relevant context are sent to the selected translator. Column widths in all tables can be changed with the mouse.
 
 ## Review and write
 
@@ -115,7 +115,7 @@ Shared terminology is supplied by the optional Community Database subscription o
 **Machine translation is always visible and replaceable.** Translations by Google, Bing, Yandex, DeepL and Alibaba (including the free ones) are marked "Machine translation": in the **Translation origin** column and filter on **Strings**, in the translation breakdown on the mod card and in the library tooltip. Replace it with an AI translation in three ways:
 
 - **by file:** **Export a job for an AI…** → "Unreviewed machine translation". The export holds the current translation next to the source, in the same code markers, so the AI can translate again or correct it. Import the result and check the replacements in the preview (**All filtered results** checks them all);
-- **directly:** **Translate via API…** → "Unreviewed machine translation" with an AI translator (ChatGPT, OpenAI-compatible, Claude). **Translate again** is turned on automatically so memory does not return the same machine translation;
+- **directly:** **Translate: Google, Bing, AI…** → "Unreviewed machine translation" with an AI translator (ChatGPT, OpenAI-compatible, Claude). **Translate again** is turned on automatically so memory does not return the same machine translation;
 - **for many mods:** in the "Translate all mods with no translation…" wizard enable **Also replace unreviewed machine translation** — mods fully translated by machine are listed too.
 
 Lines you have reviewed are not included. To keep a machine translation, mark the line as reviewed.

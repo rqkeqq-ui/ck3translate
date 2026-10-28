@@ -8,7 +8,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QThread, QTimer, Signal
+from PySide6.QtCore import Qt, QThread, QTimer, Signal
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -35,6 +35,31 @@ from ck3loc.desktop.workers import TranslateWorker
 from ck3loc.providers.registry import PROVIDERS, get_api_key, key_required
 
 PREVIEW_LIMIT = 1000
+
+# Объяснения к «?» в окне перевода — простыми словами, без терминов.
+HELP = {
+    'provider': 'Кто переводит. Варианты «бесплатно» (Google, Bing, Яндекс, Alibaba) работают без ключа и '
+                'регистрации, быстро, но дословно. Нейросети (ChatGPT, Claude, DeepSeek и другие) переводят '
+                'точнее и понимают контекст, но нужна подписка или ключ API.',
+    'size': 'Сколько строк отправлять за один раз. Для нейросетей больше строк — быстрее и дешевле, но слишком '
+            'большой запрос модель может не дописать; 20–40 строк обычно безопасно. Бесплатные переводчики всё '
+            'равно переводят по одной строке.',
+    'workers': 'Сколько запросов отправлять одновременно. 2–4 ускоряют перевод через платный API или свой '
+               'сервер. Бесплатные переводчики и бесплатные тарифы за это блокируют — для них оставьте 1.',
+    'pause': 'Сколько секунд ждать между запросами. Нужно, если сервис пишет о лимите («слишком много '
+             'запросов»): поставьте 2–5 секунд. Обычно оставьте 0.',
+    'reuse': 'Перевод, который уже есть, подставляется сразу — без запроса к переводчику и бесплатно. '
+             'Наведите на «?» у каждого пункта, чтобы узнать, откуда он берётся.',
+    'use_vanilla': 'Если точно такая же фраза есть в самой игре Crusader Kings 3, берётся официальный перевод '
+                   'Paradox. Бесплатно, без запроса и одинаково с игрой (например, «Duke» → «Герцог»).',
+    'use_memory': 'Если вы уже переводили точно такую же фразу — в этом или другом моде, — берётся тот перевод. '
+                  'Экономит запросы, и одинаковые фразы переведены одинаково.',
+    'allow_service_memory': 'Разрешить брать из памяти и машинный перевод (Google, Bing и другие), который вы '
+                            'ещё не проверили. Включено — меньше запросов. Выключено — такие фразы переведёт '
+                            'выбранный переводчик заново. Для перевода нейросетью лучше выключить.',
+    'retranslate': 'Ничего не подставлять: каждая строка уходит выбранному переводчику, даже если готовый '
+                   'перевод есть в игре или в памяти. Включайте, чтобы исправить или заменить перевод.',
+}
 
 
 def provider_combo() -> QComboBox:
@@ -94,26 +119,30 @@ class TranslateOptions(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         from ck3loc.desktop.chatgpt_settings import ChatGPTAccountBar
+        from ck3loc.desktop.widgets import HelpMark, with_help
         form = QFormLayout(self)
         form.setContentsMargins(0, 0, 0, 0)
+        self.help: dict[str, HelpMark] = {}
+
+        def label(text: str, name: str, explanation: str) -> QWidget:
+            box, self.help[name] = with_help(QLabel(tr(text)), tr(explanation))
+            return box
+
         self.combo = provider_combo()
-        form.addRow(tr('Переводчик:'), self.combo)
+        form.addRow(label('Переводчик:', 'provider', HELP['provider']), self.combo)
         self.chatgpt = ChatGPTAccountBar(show_models=True)
         form.addRow('', self.chatgpt)
         self.size = QSpinBox()
         self.size.setRange(1, 250)
         self.size.setValue(40)
         self.size.setMaximumWidth(110)
-        self.size.setToolTip(tr('Сколько строк отправлять одним запросом. Большой запрос может не поместиться в ответ.'))
-        form.addRow(tr('Не более строк на запрос:'), self.size)
+        form.addRow(label('Не более строк на запрос:', 'size', HELP['size']), self.size)
         from ck3loc.core.pipeline import MAX_WORKERS
         self.workers = QSpinBox()
         self.workers.setRange(1, MAX_WORKERS)
         self.workers.setValue(int(settings.get('translate_workers') or 1))
         self.workers.setMaximumWidth(110)
-        self.workers.setToolTip(tr('Сколько запросов отправлять одновременно. Быстрее, но бесплатные тарифы '
-                                   'могут ограничить частые запросы.'))
-        form.addRow(tr('Параллельных запросов:'), self.workers)
+        form.addRow(label('Параллельных запросов:', 'workers', HELP['workers']), self.workers)
         self.pause = QDoubleSpinBox()
         self.pause.setRange(0.0, 600.0)
         self.pause.setDecimals(1)
@@ -121,25 +150,24 @@ class TranslateOptions(QWidget):
         self.pause.setValue(float(settings.get('translate_pause') or 0.0))
         self.pause.setSuffix(' ' + tr('с'))
         self.pause.setMaximumWidth(110)
-        self.pause.setToolTip(tr('Пауза между запросами (между группами одновременных запросов). '
-                                 'Помогает не упираться в лимит частоты.'))
-        form.addRow(tr('Пауза между запросами:'), self.pause)
+        form.addRow(label('Пауза между запросами:', 'pause', HELP['pause']), self.pause)
         self.workers.valueChanged.connect(lambda value: settings.set_value('translate_workers', value))
         self.pause.valueChanged.connect(lambda value: settings.set_value('translate_pause', value))
         self.use_vanilla = QCheckBox(tr('Использовать ваниль CK3'))
         self.use_memory = QCheckBox(tr('Использовать память переводов'))
         self.allow_service_memory = QCheckBox(tr('Использовать непроверенные сервисные переводы из памяти'))
         self.retranslate = QCheckBox(tr('Перевести заново'))
-        self.retranslate.setToolTip(tr('Не подставлять ваниль и память: все выбранные строки уйдут переводчику.'))
         self.use_vanilla.setChecked(True)
         self.use_memory.setChecked(True)
         checks = QWidget()
         cv = QVBoxLayout(checks)
         cv.setContentsMargins(0, 0, 0, 0)
-        for box in (self.use_vanilla, self.use_memory, self.allow_service_memory, self.retranslate):
-            cv.addWidget(box)
+        for name, box in (('use_vanilla', self.use_vanilla), ('use_memory', self.use_memory),
+                          ('allow_service_memory', self.allow_service_memory), ('retranslate', self.retranslate)):
+            row, self.help[name] = with_help(box, tr(HELP[name]))
+            cv.addWidget(row)
             box.toggled.connect(self._changed)
-        form.addRow(tr('Подстановки:'), checks)
+        form.addRow(label('Готовые переводы:', 'reuse', HELP['reuse']), checks)
         self.combo.currentIndexChanged.connect(self._changed)
         self.size.valueChanged.connect(self._changed)
         self.chatgpt.changed.connect(self.changed.emit)
@@ -155,11 +183,8 @@ class TranslateOptions(QWidget):
             box.setEnabled(reuse)
         single = getattr(PROVIDERS[self.provider()], 'max_workers', None) == 1
         self.workers.setEnabled(not single)
-        self.workers.setToolTip(
-            tr('Бесплатный Google принимает только один запрос за раз: параллельные запросы '
-               'приводят к блокировке по IP.') if single else
-            tr('Сколько запросов отправлять одновременно. Быстрее, но бесплатные тарифы '
-               'могут ограничить частые запросы.'))
+        self.workers.setToolTip(tr('Бесплатный Google принимает только один запрос за раз: параллельные запросы '
+                                   'приводят к блокировке по IP.') if single else '')
         self.changed.emit()
 
     def provider(self) -> str:
@@ -264,8 +289,11 @@ class TranslateDialog(QDialog):
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         v.addWidget(self.table, 3)
         self.progress = QProgressBar()
+        self.progress.setFormat(tr('Переведено %v из %m'))
         self.progress.hide()
         v.addWidget(self.progress)
+        self.results = []      # ChangePreview черновика, когда таблица показывает результат
+        self._run_keys = []    # строки текущего запуска — для живого заполнения таблицы
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
         self.log.setMaximumHeight(130)
@@ -284,7 +312,20 @@ class TranslateDialog(QDialog):
         self.btn_stop.clicked.connect(self.stop)
         self.btn_stop.setEnabled(False)
         btns.addWidget(self.btn_stop)
-        self.review_button = QPushButton(tr('Проверить результат'))
+        self.apply_button = QPushButton(tr('Применить отмеченное'))
+        self.apply_button.setProperty('accent', 'true')
+        self.apply_button.setToolTip(tr('Отмеченные строки станут действующим переводом в программе. '
+                                        'Игровые файлы меняются отдельно — кнопкой «Записать перевод в игру».'))
+        self.apply_button.clicked.connect(self.apply_checked)
+        self.apply_button.hide()
+        btns.addWidget(self.apply_button)
+        self.check_all_button = QPushButton(tr('Отметить все'))
+        self.check_all_button.setToolTip(tr('Отметить и замены уже существующего перевода.'))
+        self.check_all_button.clicked.connect(self.check_all)
+        self.check_all_button.hide()
+        btns.addWidget(self.check_all_button)
+        self.review_button = QPushButton(tr('Подробный просмотр…'))
+        self.review_button.setToolTip(tr('Отдельное окно с поиском и полными текстами длинных строк.'))
         self.review_button.clicked.connect(self.review)
         self.review_button.setEnabled(bool(job_id))
         btns.addWidget(self.review_button)
@@ -329,9 +370,22 @@ class TranslateDialog(QDialog):
             self._warmup.start()
         return False
 
+    def _set_headers(self, last: str) -> None:
+        self.table.setHorizontalHeaderLabels([tr(s) for s in ('Ключ', 'Исходник', 'Текущий перевод', last)])
+
+    def _show_results_mode(self, on: bool) -> None:
+        self.apply_button.setVisible(on)
+        self.check_all_button.setVisible(on)
+        if not on:
+            self.results = []
+
     def update_preview(self, *_):
         from ck3loc.core.ops import rows_to_translate
         from ck3loc.core.pipeline import build_vanilla_lookup, plan_translation
+        if self.worker is not None and self.worker.isRunning():
+            return  # во время перевода таблица показывает ход перевода
+        self._show_results_mode(False)
+        self._set_headers('Что будет')
         if self.ctx is None:
             self.summary.setText(tr('Мод больше не установлен. Переводы сохранены в базе.'))
             self.btn_go.setEnabled(False)
@@ -401,8 +455,9 @@ class TranslateDialog(QDialog):
         self.worker = TranslateWorker(self.mod_id, name, self.scope.currentData(),
             self.ctx.project['source_lang'], self.ctx.project['target_lang'], keys=self.keys,
             options=self.options(), job_id=self.job_id, mod_dir=self.ctx.scan.mod_dir, rows=rows)
-        self.worker.progress.connect(lambda d, t: (self.progress.setMaximum(max(t, 1)), self.progress.setValue(d)))
+        self.worker.progress.connect(self._on_progress)
         self.worker.line.connect(self.log.appendPlainText)
+        self._show_run(rows)
         self.worker.done.connect(self._on_done)
         self.worker.finished.connect(self._worker_finished)
         self.log.appendPlainText(tr_format('Запущено: {n} строк. Можно остановить в любой момент — готовые ответы сохранятся.',
@@ -424,16 +479,103 @@ class TranslateDialog(QDialog):
             self.btn_stop.setEnabled(False)
             self.log.appendPlainText(tr('Ожидаю завершения текущего запроса. Завершённые черновики сохранены.'))
 
+    # ---------- ход перевода и результат в этом же окне ----------
+
+    def _show_run(self, rows) -> None:
+        """Строки запуска в таблице: «Новый перевод» заполняется по мере ответов."""
+        self._show_results_mode(False)
+        self._set_headers('Новый перевод')
+        self._run_keys = [r['key'] for r in rows[:PREVIEW_LIMIT]]
+        self.table.setRowCount(len(self._run_keys))
+        for i, row in enumerate(rows[:PREVIEW_LIMIT]):
+            for j, text in enumerate((row['key'], row['source'], row.get('current_target', ''), tr('ожидает…'))):
+                item = QTableWidgetItem(text)
+                item.setToolTip(text)
+                self.table.setItem(i, j, item)
+
+    def _on_progress(self, done: int, total: int) -> None:
+        self.progress.setMaximum(max(total, 1))
+        self.progress.setValue(done)
+        if not self.job_id or not self._run_keys:
+            return
+        drafts = {r['key']: r['target_text'] for r in self.conn.execute(
+            'SELECT key,target_text FROM job_results WHERE job_id=? AND target_text IS NOT NULL', (self.job_id,))}
+        for i, key in enumerate(self._run_keys):
+            if key in drafts and self.table.item(i, 3) is not None:
+                self.table.item(i, 3).setText(drafts[key])
+                self.table.item(i, 3).setToolTip(drafts[key])
+
+    def show_results(self) -> None:
+        """Черновик задания в таблице: галочки и «Применить отмеченное» прямо здесь."""
+        from ck3loc.core.jobs import preview_job
+        from ck3loc.core.ops import load_project_context
+        if not self.job_id or self.ctx is None:
+            return
+        self.ctx = load_project_context(self.conn, self.mod_id, self.ctx.project['source_lang'],
+                                        self.ctx.project['target_lang'], mod_dir=self.ctx.scan.mod_dir)
+        self.results = [r for r in preview_job(self.ctx, self.job_id) if r.after or r.change == 'blocked']
+        self._set_headers('Новый перевод')
+        self.table.setUpdatesEnabled(False)
+        self.table.setRowCount(len(self.results))
+        states = {'add': 'добавится', 'replace': 'заменит текущий', 'unchanged': 'без изменений',
+                  'blocked': 'исходник изменился'}
+        for i, row in enumerate(self.results):
+            key = QTableWidgetItem(row.key)
+            key.setToolTip(f"{row.key}\n{tr(states.get(row.change, row.change))}")
+            if row.change in ('add', 'replace'):
+                key.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsSelectable)
+                # Добавления отмечены сразу; замену готового перевода отмечаете вы.
+                key.setCheckState(Qt.CheckState.Checked if row.change == 'add' else Qt.CheckState.Unchecked)
+            else:
+                key.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+            self.table.setItem(i, 0, key)
+            for j, text in enumerate((row.source, row.before, row.after), 1):
+                item = QTableWidgetItem(text)
+                item.setToolTip(text)
+                self.table.setItem(i, j, item)
+        self.table.setUpdatesEnabled(True)
+        self._show_results_mode(bool(self.results))
+        replaces = sum(r.change == 'replace' for r in self.results)
+        self.summary.setText(tr_format('Результат: {n} строк. Отмеченные станут переводом после «Применить отмеченное»; '
+                                       'замены готового перевода ({replaces}) отмечаете вы.',
+                                       n=len(self.results), replaces=replaces))
+
+    def checked_keys(self) -> set[str]:
+        return {r.key for i, r in enumerate(self.results)
+                if self.table.item(i, 0) and self.table.item(i, 0).checkState() == Qt.CheckState.Checked}
+
+    def check_all(self) -> None:
+        for i, row in enumerate(self.results):
+            if row.change in ('add', 'replace'):
+                self.table.item(i, 0).setCheckState(Qt.CheckState.Checked)
+
+    def apply_checked(self) -> None:
+        from ck3loc.core.jobs import apply_job
+        keys = self.checked_keys()
+        if not keys:
+            QMessageBox.information(self, tr('Применить'), tr('Отметьте строки, которые нужно применить.'))
+            return
+        result = apply_job(self.ctx, self.job_id, keys)
+        self.log.appendPlainText(tr_format('Применено строк: {n}; конфликтов: {conflicts}. Игровые файлы обновляются кнопкой «Записать перевод в игру».',
+                                           n=len(result.changed), conflicts=len(result.conflicts)))
+        self.show_results()
+
     def _on_done(self, stats):
         self.stats = stats
         if stats:
             self.job_id = stats.job_id
-            self.log.appendPlainText(tr_format('{state}: готово строк {n}; ошибок {errors}. Результат в черновике — нажмите «Проверить результат».',
+            self.log.appendPlainText(tr_format('{state}: готово строк {n}; ошибок {errors}. Результат — в таблице выше: '
+                                               'отметьте строки и нажмите «Применить отмеченное».',
                                                state=tr(stats.state), n=stats.translated, errors=len(stats.failed)))
             for key, reason in stats.failed[:20]:
                 self.log.appendPlainText(f'  {key}: {tr(reason)}')
         self._set_running(False)
-        self.update_preview()
+        if self.job_id:
+            self.show_results()
+            # Разблокировка настроек запланировала пересчёт сметы — он затёр бы результат.
+            self._debounce.stop()
+        else:
+            self.update_preview()
 
     def review(self):
         from ck3loc.core.jobs import apply_job, preview_job
@@ -448,7 +590,7 @@ class TranslateDialog(QDialog):
             result = apply_job(self.ctx, self.job_id, dialog.selected_keys())
             self.log.appendPlainText(tr_format('Применено строк: {n}; конфликтов: {conflicts}. Игровые файлы обновляются кнопкой «Записать перевод в игру».',
                                                n=len(result.changed), conflicts=len(result.conflicts)))
-        self.update_preview()
+        self.show_results()
 
     def discard(self):
         from ck3loc.core.jobs import discard_job

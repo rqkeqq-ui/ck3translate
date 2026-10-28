@@ -182,11 +182,8 @@ class BatchDialog(QDialog):
 
         self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels([tr(s) for s in ['Выбрать', 'Мод', 'Папка', 'Языки', 'Строки']])
-        header = self.table.horizontalHeader()
-        for column, mode in enumerate((QHeaderView.ResizeMode.ResizeToContents, QHeaderView.ResizeMode.Stretch,
-                                       QHeaderView.ResizeMode.Stretch, QHeaderView.ResizeMode.ResizeToContents,
-                                       QHeaderView.ResizeMode.ResizeToContents)):
-            header.setSectionResizeMode(column, mode)
+        from ck3loc.desktop.widgets import resizable_columns
+        resizable_columns(self.table, {0: 80, 1: 320, 2: 380, 3: 140})
         self.table.setWordWrap(False)
         self.table.itemChanged.connect(self.update_preview)
         v.addWidget(self.table, 1)
@@ -215,7 +212,7 @@ class BatchDialog(QDialog):
         actions = QHBoxLayout()
         self.action_buttons = []
         for title, callback in [('Выгрузить для LLM', self.export),
-                                ('Перевести через подписку ChatGPT или сервис…', self.translate),
+                                ('Перевести: Google, Bing, нейросеть…', self.translate),
                                 ('Загрузить результаты LLM…', self.import_results),
                                 ('Загрузить папку результатов…', self.import_directory),
                                 ('Записать выбранные переводы в игру…', self.write_selected)]:
@@ -598,11 +595,8 @@ class WritePreviewDialog(QDialog):
         v.addWidget(note)
         self.table = QTableWidget(len(plans), 4)
         self.table.setHorizontalHeaderLabels([tr(s) for s in ['Записать', 'Мод', 'Строк', 'Файлы']])
-        header = self.table.horizontalHeader()
-        for column, mode in enumerate((QHeaderView.ResizeMode.ResizeToContents, QHeaderView.ResizeMode.Interactive,
-                                       QHeaderView.ResizeMode.ResizeToContents, QHeaderView.ResizeMode.Stretch)):
-            header.setSectionResizeMode(column, mode)
-        self.table.setColumnWidth(1, 300)
+        from ck3loc.desktop.widgets import resizable_columns
+        resizable_columns(self.table, {0: 80, 1: 300, 2: 80})
         self.table.setWordWrap(False)
         self.table.setTextElideMode(Qt.TextElideMode.ElideMiddle)
         self.table.verticalHeader().hide()

@@ -38,23 +38,34 @@ def _library():
 class WebFreeProvider(TranslationProvider):
     engine = ''
     url = ''           # адрес сервиса — для выбора системного прокси
-    batch_size = 20
-    delay = 0.5        # пауза между строками
+    # По строке на пачку: веб-версии переводят по одной строке, а окно показывает ход после каждой.
+    batch_size = 1
+    delay = 0.5        # пауза между запросами — и между пачками
     max_workers = 1    # параллельные запросы к веб-версиям приводят к бану по IP
+
+    def __init__(self, api_key: str = "", **options):
+        super().__init__(api_key, **options)
+        self._last_request: float | None = None
+
+    def _wait_turn(self) -> None:
+        now = time.monotonic()
+        if self._last_request is not None and (wait := self.delay - (now - self._last_request)) > 0:
+            time.sleep(wait)
 
     def translate_batch(self, texts, source_lang, target_lang,
                         glossary=None, context_types=None):
         source, target = lang_code(source_lang), lang_code(target_lang)
-        result, sent = [], 0
+        result = []
         for text in texts:
             if not text.strip() or _NOTHING_TO_TRANSLATE.fullmatch(text):
                 result.append(text)
                 continue
-            if sent:
-                time.sleep(self.delay)
+            self._wait_turn()
             head, core, tail = split_edges(text)
-            result.append(head + self._translate(core, source, target) + tail)
-            sent += 1
+            try:
+                result.append(head + self._translate(core, source, target) + tail)
+            finally:
+                self._last_request = time.monotonic()
         return result
 
     def _translate(self, text: str, source: str, target: str) -> str:

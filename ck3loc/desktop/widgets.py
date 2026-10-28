@@ -36,6 +36,44 @@ STATUS_UI = {
 }
 
 
+def resizable_columns(table, widths: dict[int, int] | None = None) -> None:
+    """Все столбцы таблицы меняют ширину мышью; последний заполняет остаток."""
+    from PySide6.QtWidgets import QHeaderView
+    header = table.horizontalHeader()
+    header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
+    header.setStretchLastSection(True)
+    header.setMinimumSectionSize(40)
+    for column, width in (widths or {}).items():
+        table.setColumnWidth(column, width)
+
+
+class HelpMark(QLabel):
+    """Кружок «?» рядом с настройкой: наведите — появится объяснение простыми словами."""
+
+    def __init__(self, text: str, parent=None):
+        super().__init__('?', parent)
+        from html import escape
+        # Форматированная подсказка переносится по ширине, а не тянется одной строкой.
+        self.setToolTip(f'<div style="width: 360px;">{escape(text)}</div>')
+        self.setCursor(Qt.CursorShape.WhatsThisCursor)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setFixedSize(18, 18)
+        self.setStyleSheet('QLabel { border: 1px solid palette(mid); border-radius: 9px; font-weight: 600; }')
+
+
+def with_help(widget: QWidget, text: str) -> tuple[QWidget, HelpMark]:
+    """Виджет и «?» в одной строке."""
+    box = QWidget()
+    row = QHBoxLayout(box)
+    row.setContentsMargins(0, 0, 0, 0)
+    row.setSpacing(6)
+    row.addWidget(widget)
+    mark = HelpMark(text)
+    row.addWidget(mark)
+    row.addStretch(1)
+    return box, mark
+
+
 def status_label(status: str) -> str:
     from ck3loc.core.i18n import tr
 
