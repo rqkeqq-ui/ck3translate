@@ -33,12 +33,13 @@ class Candidate:
     source_lang: str
     target_lang: str
     project_id: int
-    rows: list[dict] = field(default_factory=list)  # недостающие строки
+    rows: list[dict] = field(default_factory=list)  # недостающие (+ машинный перевод на замену)
     missing_files: bool = False
     unwritten: int = 0  # применено в базе, но ещё не записано в игру
+    machine: int = 0    # из rows — непроверенный машинный перевод на замену
 
 
-def load_candidates(conn, report, token) -> list[Candidate]:
+def load_candidates(conn, report, token, include_machine: bool = False) -> list[Candidate]:
     from ck3loc.core.mod_library import discover_mods
     from ck3loc.core.ops import load_project_context, rows_to_translate
     from ck3loc.core.writer import verify_outputs
@@ -55,11 +56,14 @@ def load_candidates(conn, report, token) -> list[Candidate]:
             continue
         lost = any(c.state == 'missing' for c in verify_outputs(conn, ctx.project_id))
         rows = rows_to_translate(ctx, 'missing')
+        machine = rows_to_translate(ctx, 'service') if include_machine else []
+        known = {r['key'] for r in rows}
+        rows = sorted(rows + [r for r in machine if r['key'] not in known], key=lambda r: r['key'])
         unwritten = pending_write_count(ctx)
         if lost or rows or unwritten:
             result.append(Candidate(mod.mod_id, mod.path, 'Local' if mod.source == 'local' else 'Workshop',
                                     ctx.scan.name, ctx.project['source_lang'], ctx.project['target_lang'],
-                                    ctx.project_id, rows, lost, unwritten))
+                                    ctx.project_id, rows, lost, unwritten, len(machine)))
     return result
 
 
@@ -157,6 +161,12 @@ class BatchDialog(QDialog):
                          'применение и запись в игру — отдельные шаги.'))
         hint.setWordWrap(True)
         v.addWidget(hint)
+        self.replace_machine = QCheckBox(tr('Также заменить непроверенный машинный перевод'))
+        self.replace_machine.setToolTip(tr(
+            'Добавить к выбору строки, переведённые Google, Bing, Яндексом, DeepL или Alibaba и не проверенные вами — '
+            'в том числе в модах, где перевод уже полный. При загрузке результата отметьте замены.'))
+        self.replace_machine.toggled.connect(lambda *_: self.reload())
+        v.addWidget(self.replace_machine)
 
         busy = QHBoxLayout()
         self.status = QLabel()
@@ -276,7 +286,12 @@ class BatchDialog(QDialog):
     # ---------- список модов ----------
 
     def reload(self):
-        self.run_task(load_candidates, self._loaded, tr('Читаю моды библиотеки…'))
+        if self.replace_machine.isChecked():
+            def load(conn, report, token):
+                return load_candidates(conn, report, token, include_machine=True)
+        else:
+            load = load_candidates
+        self.run_task(load, self._loaded, tr('Читаю моды библиотеки…'))
 
     def _loaded(self, candidates):
         self.candidates = candidates
@@ -289,6 +304,8 @@ class BatchDialog(QDialog):
             item.setCheckState(Qt.CheckState.Checked if cand.rows or cand.unwritten else Qt.CheckState.Unchecked)
             self.table.setItem(i, 0, item)
             lines = str(len(cand.rows))
+            if cand.machine:
+                lines += ' · ' + tr_format('машинный перевод: {n}', n=cand.machine)
             if cand.unwritten:
                 lines += ' · ' + tr_format('не записано в игру: {n}', n=cand.unwritten)
             if cand.missing_files:

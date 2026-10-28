@@ -307,7 +307,7 @@
  "Строк: {n}; файлов-заданий: {parts}; служебных файлов: {service}": "Rows: {n}; task files: {parts}; supporting files: {service}",
  "Строк: {n}; запросов: {requests}; переводчик: {provider}; аккаунт/модель: {account} / {model}": "Rows: {n}; requests: {requests}; provider: {provider}; account/model: {account} / {model}",
  "llm": "LLM",
- "service": "Service",
+ "service": "Machine translation",
  "manual": "Manual",
  "vanilla": "CK3 vanilla",
  "native": "Mod author",
@@ -557,5 +557,10 @@
  "Bing Translator · бесплатно": "Bing Translator · free",
  "Google (веб-версия) · бесплатно": "Google (web) · free",
  "Яндекс Переводчик · бесплатно": "Yandex Translate · free",
- "Alibaba · бесплатно": "Alibaba · free"
+ "Alibaba · бесплатно": "Alibaba · free",
+ "Непроверенный машинный перевод": "Unreviewed machine translation",
+ "Строки, переведённые Google, Bing, Яндексом, DeepL или Alibaba и не отмеченные вами как проверенные. Чтобы заменить их переводом нейросети, при загрузке отметьте замены.": "Lines translated by Google, Bing, Yandex, DeepL or Alibaba that you have not marked as reviewed. To replace them with an AI translation, check the replacements when importing.",
+ "Также заменить непроверенный машинный перевод": "Also replace unreviewed machine translation",
+ "Добавить к выбору строки, переведённые Google, Bing, Яндексом, DeepL или Alibaba и не проверенные вами — в том числе в модах, где перевод уже полный. При загрузке результата отметьте замены.": "Add lines translated by Google, Bing, Yandex, DeepL or Alibaba that you have not reviewed — also in mods that are already fully translated. Check the replacements when importing the result.",
+ "машинный перевод: {n}": "machine translation: {n}"
 }

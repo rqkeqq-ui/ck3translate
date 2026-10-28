@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from ck3loc.core.i18n import tr, tr_format
-from ck3loc.core.ops import WHAT_ALL, WHAT_MISSING, WHAT_OUTDATED, WHAT_STALE, WHAT_SELECTED
+from ck3loc.core.ops import WHAT_ALL, WHAT_MISSING, WHAT_OUTDATED, WHAT_SELECTED, WHAT_SERVICE, WHAT_STALE
 from ck3loc.desktop.widgets import Card
 
 
@@ -63,6 +63,11 @@ class ExportScopeDialog(QDialog):
         add_option(
             "Только устаревшие", WHAT_STALE,
             "Ничего нового, только освежить те, что разошлись с источником.",
+        )
+        add_option(
+            "Непроверенный машинный перевод", WHAT_SERVICE,
+            "Строки, переведённые Google, Bing, Яндексом, DeepL или Alibaba и не отмеченные вами как "
+            "проверенные. Чтобы заменить их переводом нейросети, при загрузке отметьте замены.",
         )
         add_option(
             "Все строки", WHAT_ALL,

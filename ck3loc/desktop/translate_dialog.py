@@ -228,7 +228,8 @@ class TranslateDialog(QDialog):
         scope_row.addWidget(QLabel(tr('Какие строки:')))
         self.scope = QComboBox()
         for label, scope in [('Только недостающие', 'missing'), ('Недостающие и устаревшие', 'outdated'),
-                             ('Только устаревшие', 'stale'), ('Выбранные строки', 'selected'), ('Все строки', 'all')]:
+                             ('Только устаревшие', 'stale'), ('Непроверенный машинный перевод', 'service'),
+                             ('Выбранные строки', 'selected'), ('Все строки', 'all')]:
             if scope == 'selected' and not self.keys:
                 continue
             self.scope.addItem(tr(label), scope)
@@ -240,9 +241,12 @@ class TranslateDialog(QDialog):
             self.scope.setToolTip(tr('Продолжение задания: переводятся только оставшиеся строки.'))
 
         self.opts = TranslateOptions()
-        if what == 'selected':
+        if what in ('selected', 'service'):
             # Явный выбор строк для исправления — по умолчанию переводим их заново.
             self.opts.retranslate.setChecked(True)
+        # Замена машинного перевода: иначе память подставит тот же машинный перевод.
+        self.scope.currentIndexChanged.connect(
+            lambda *_: self.opts.retranslate.setChecked(True) if self.scope.currentData() == 'service' else None)
         v.addWidget(self.opts)
 
         self.summary = QLabel()

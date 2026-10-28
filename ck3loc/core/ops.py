@@ -154,6 +154,7 @@ WHAT_STALE = "stale"          # только устаревшие
 WHAT_OUTDATED = "outdated"    # непереведённые + устаревшие (обычный выбор)
 WHAT_ALL = "all"              # плюс строки, переведённые самим модом
 WHAT_SELECTED = "selected"
+WHAT_SERVICE = "service"      # непроверенный машинный перевод (Google, Bing, Яндекс, DeepL…) — заменить
 
 
 def rows_to_translate(ctx: ProjectContext, what: str = WHAT_OUTDATED,
@@ -171,11 +172,15 @@ def rows_to_translate(ctx: ProjectContext, what: str = WHAT_OUTDATED,
     if what == WHAT_ALL:
         # полная переработка: берём и то, что перевёл сам автор мода
         statuses.add(NATIVE)
-    if what not in {WHAT_MISSING, WHAT_STALE, WHAT_OUTDATED, WHAT_ALL, WHAT_SELECTED}:
+    if what not in {WHAT_MISSING, WHAT_STALE, WHAT_OUTDATED, WHAT_ALL, WHAT_SELECTED, WHAT_SERVICE}:
         raise ValueError('Unknown translation scope')
     src = ctx.source_values
-    wanted = (set(src) if what == WHAT_ALL else set(keys or ()) if what == WHAT_SELECTED
-              else {r.key for r in ctx.rows if r.status in statuses})
+    if what == WHAT_SERVICE:
+        from .provenance import removable
+        wanted = {key for key, unit in ctx.units.items() if removable(dict(unit))}
+    else:
+        wanted = (set(src) if what == WHAT_ALL else set(keys or ()) if what == WHAT_SELECTED
+                  else {r.key for r in ctx.rows if r.status in statuses})
     current = {r.key: r.target_text or r.native_target or '' for r in ctx.rows}
     summary = ctx.scan.languages.get(ctx.project['source_lang'])
     return [{"key": k, "source": src[k], 'current_target': current.get(k, ''),
@@ -187,7 +192,7 @@ def counts_by_scope(ctx: ProjectContext) -> dict[str, int]:
     """Сколько строк в каждом наборе — для сметы перед выгрузкой."""
     return {
         what: len(rows_to_translate(ctx, what))
-        for what in (WHAT_MISSING, WHAT_STALE, WHAT_OUTDATED, WHAT_ALL)
+        for what in (WHAT_MISSING, WHAT_STALE, WHAT_OUTDATED, WHAT_ALL, WHAT_SERVICE)
     }
 
 

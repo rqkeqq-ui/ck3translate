@@ -1,6 +1,6 @@
 {
  "llm": "LLM",
- "service": "Сервис",
+ "service": "Машинный перевод",
  "manual": "Ручной",
  "vanilla": "Ваниль CK3",
  "native": "Автор мода",
@@ -57,5 +57,6 @@
  "ChatGPT returned an invalid translation batch": "ChatGPT вернул неполный или некорректный ответ; оставшиеся строки можно продолжить",
  "ChatGPT stream ended before response.completed": "Ответ ChatGPT оборвался; готовые части сохранены, оставшиеся строки можно продолжить",
  "OpenAI refused the connection (403). The request went directly, without a proxy: the Windows system proxy is turned off. Turn on your VPN client's system proxy (or TUN mode) and sign in again.": "OpenAI отклонил подключение (403). Запрос шёл напрямую, без прокси: системный прокси Windows выключен. Включите в VPN-клиенте системный прокси (или режим TUN) и войдите снова.",
- "OpenAI refused the connection (403) even through the Windows system proxy. Check that your VPN or proxy route allows auth.openai.com, then sign in again.": "OpenAI отклонил подключение (403) даже через системный прокси Windows. Проверьте, что маршрут VPN или прокси пропускает auth.openai.com, и войдите снова."
+ "OpenAI refused the connection (403) even through the Windows system proxy. Check that your VPN or proxy route allows auth.openai.com, then sign in again.": "OpenAI отклонил подключение (403) даже через системный прокси Windows. Проверьте, что маршрут VPN или прокси пропускает auth.openai.com, и войдите снова.",
+ "Непроверенный машинный перевод": "Непроверенный машинный перевод"
 }

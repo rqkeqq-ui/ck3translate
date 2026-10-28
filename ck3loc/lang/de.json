@@ -271,7 +271,7 @@
  "Строк: {n}; файлов-заданий: {parts}; служебных файлов: {service}": "Zeilen: {n}; Aufgabendateien: {parts}; Hilfsdateien: {service}",
  "Строк: {n}; запросов: {requests}; переводчик: {provider}; аккаунт/модель: {account} / {model}": "Zeilen: {n}; Anfragen: {requests}; Anbieter: {provider}; Konto/Modell: {account} / {model}",
  "llm": "LLM",
- "service": "Dienst",
+ "service": "Maschinelle Übersetzung",
  "manual": "Manuell",
  "vanilla": "CK3-Vanilla",
  "native": "Modautor",
@@ -525,5 +525,10 @@
  "Bing Translator · бесплатно": "Bing Translator · kostenlos",
  "Google (веб-версия) · бесплатно": "Google (Web) · kostenlos",
  "Яндекс Переводчик · бесплатно": "Yandex Übersetzer · kostenlos",
- "Alibaba · бесплатно": "Alibaba · kostenlos"
+ "Alibaba · бесплатно": "Alibaba · kostenlos",
+ "Непроверенный машинный перевод": "Ungeprüfte maschinelle Übersetzung",
+ "Строки, переведённые Google, Bing, Яндексом, DeepL или Alibaba и не отмеченные вами как проверенные. Чтобы заменить их переводом нейросети, при загрузке отметьте замены.": "Von Google, Bing, Yandex, DeepL oder Alibaba übersetzte Zeilen, die Sie nicht als geprüft markiert haben. Um sie durch eine KI-Übersetzung zu ersetzen, markieren Sie beim Laden die Ersetzungen.",
+ "Также заменить непроверенный машинный перевод": "Auch ungeprüfte maschinelle Übersetzung ersetzen",
+ "Добавить к выбору строки, переведённые Google, Bing, Яндексом, DeepL или Alibaba и не проверенные вами — в том числе в модах, где перевод уже полный. При загрузке результата отметьте замены.": "Von Google, Bing, Yandex, DeepL oder Alibaba übersetzte, nicht geprüfte Zeilen hinzufügen – auch in bereits vollständig übersetzten Mods. Beim Laden des Ergebnisses die Ersetzungen markieren.",
+ "машинный перевод: {n}": "maschinell: {n}"
 }

@@ -271,7 +271,7 @@
  "Строк: {n}; файлов-заданий: {parts}; служебных файлов: {service}": "Filas: {n}; archivos: {parts}; archivos auxiliares: {service}",
  "Строк: {n}; запросов: {requests}; переводчик: {provider}; аккаунт/модель: {account} / {model}": "Filas: {n}; solicitudes: {requests}; proveedor: {provider}; cuenta/modelo: {account} / {model}",
  "llm": "LLM",
- "service": "Servicio",
+ "service": "Traducción automática",
  "manual": "Manual",
  "vanilla": "CK3 original",
  "native": "Autor del mod",
@@ -525,5 +525,10 @@
  "Bing Translator · бесплатно": "Bing Translator · gratis",
  "Google (веб-версия) · бесплатно": "Google (web) · gratis",
  "Яндекс Переводчик · бесплатно": "Yandex Translate · gratis",
- "Alibaba · бесплатно": "Alibaba · gratis"
+ "Alibaba · бесплатно": "Alibaba · gratis",
+ "Непроверенный машинный перевод": "Traducción automática sin revisar",
+ "Строки, переведённые Google, Bing, Яндексом, DeepL или Alibaba и не отмеченные вами как проверенные. Чтобы заменить их переводом нейросети, при загрузке отметьте замены.": "Líneas traducidas por Google, Bing, Yandex, DeepL o Alibaba que no ha marcado como revisadas. Para sustituirlas por una traducción de IA, marque los reemplazos al importar.",
+ "Также заменить непроверенный машинный перевод": "Sustituir también la traducción automática sin revisar",
+ "Добавить к выбору строки, переведённые Google, Bing, Яндексом, DeepL или Alibaba и не проверенные вами — в том числе в модах, где перевод уже полный. При загрузке результата отметьте замены.": "Añadir las líneas traducidas por Google, Bing, Yandex, DeepL o Alibaba sin revisar, también en mods ya traducidos por completo. Marque los reemplazos al importar el resultado.",
+ "машинный перевод: {n}": "automática: {n}"
 }

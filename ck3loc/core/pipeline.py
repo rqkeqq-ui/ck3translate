@@ -206,7 +206,12 @@ def translate_rows(
                 or registered[key]['baseline'] != unit_value(current_unit)):
             stats.failed.append((key, 'Source changed; export or plan this key again'))
             continue
+        # Подстановка, равная текущему переводу строки, ничего не меняет (например, тот же
+        # машинный перевод из памяти при его замене) — такая строка уходит переводчику.
+        current_text = current_unit['target_text'] if current_unit else ''
         hit = vanilla_hit(vl, text) if use_vanilla and not retranslate else None
+        if hit is not None and hit == current_text:
+            hit = None
         if hit is not None:
             try:
                 save(key, hit, 'vanilla')
@@ -218,6 +223,8 @@ def translate_rows(
                                    project_id=ctx.project_id, key=key,
                                    allow_unreviewed_service=allow_service_memory)
                   if use_memory and not retranslate else None)
+        if tm_hit is not None and tm_hit['target_text'] == current_text:
+            tm_hit = None
         if tm_hit is not None:
             try:
                 save(key, tm_hit['target_text'], tm_hit['provider'], kind=tm_hit['origin_kind'],
@@ -319,11 +326,16 @@ def plan_translation(ctx, rows, provider_name: str, *, retranslate=False, use_va
         ctx.project['source_lang'], ctx.project['target_lang']) if use_vanilla and not retranslate else {}
     result = []
     for row in rows:
+        current = row.get('current_target') or ''
         hit = vanilla_hit(vl, row['source']) if use_vanilla and not retranslate else None
+        if hit is not None and hit == current:
+            hit = None
         memory = tm_lookup_variant(ctx.conn, ctx.project['source_lang'], ctx.project['target_lang'],
             row['source'], project_id=ctx.project_id, key=row['key'],
             allow_unreviewed_service=allow_service_memory or provider_name not in LLM_PROVIDERS
             ) if use_memory and not retranslate and hit is None else None
+        if memory is not None and memory['target_text'] == current:
+            memory = None
         result.append({**row, 'reuse': 'vanilla' if hit else 'memory' if memory else '',
                        'reuse_target': hit or (memory['target_text'] if memory else ''),
                        'reuse_provider': memory['provider'] if memory else 'vanilla' if hit else provider_name})

@@ -112,6 +112,14 @@ Shared terminology is supplied by the optional Community Database subscription o
 
 **Translation origin** is stored separately from review status: LLM, service (Google/DeepL/Yandex), manual, CK3 vanilla, mod author, other mod or unknown. See the column and filter on **Strings**, the breakdown on the mod overview and the library tooltip. "Fully filled" means every line has text, not that it is correct; reviewed lines and unreviewed service translations are counted next to it.
 
+**Machine translation is always visible and replaceable.** Translations by Google, Bing, Yandex, DeepL and Alibaba (including the free ones) are marked "Machine translation": in the **Translation origin** column and filter on **Strings**, in the translation breakdown on the mod card and in the library tooltip. Replace it with an AI translation in three ways:
+
+- **by file:** **Export a job for an AI…** → "Unreviewed machine translation". The export holds the current translation next to the source, in the same code markers, so the AI can translate again or correct it. Import the result and check the replacements in the preview (**All filtered results** checks them all);
+- **directly:** **Translate via API…** → "Unreviewed machine translation" with an AI translator (ChatGPT, OpenAI-compatible, Claude). **Translate again** is turned on automatically so memory does not return the same machine translation;
+- **for many mods:** in the "Translate all mods with no translation…" wizard enable **Also replace unreviewed machine translation** — mods fully translated by machine are listed too.
+
+Lines you have reviewed are not included. To keep a machine translation, mark the line as reviewed.
+
 **Remove service translations…** removes only the unreviewed Google, DeepL and Yandex results you select. LLM, manual, reviewed, author and unknown translations are kept. Nothing is selected initially; "Also remove from manager-owned game files" rebuilds only the app's own files, with backups. The removed variant is not reused from memory in that project. Undo it in **Action history**.
 
 **Bulk translation.** "Translate all mods with no translation…" opens immediately and reads your library in the background with a progress bar; it sends and writes nothing by itself. Choose mods (Local/Workshop) and lines, export for an LLM as ZIP archives (one folder per mod, one prompt for the whole job), translate all selected mods in one window with a common **Stop**, import many files or a whole results folder, and **Write selected translations to the game…** with the file list and the option to exclude mods. Mods whose translation is applied but not yet written stay in the list.
