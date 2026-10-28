@@ -51,6 +51,7 @@ def main() -> int:
     win = MainWindow()
     win.show()
     if smoke_test:
+        _smoke_imports()
         QTimer.singleShot(1000, win.close)
     else:
         from ck3loc.desktop.community_prompt import show_community_prompt
@@ -67,6 +68,30 @@ def main() -> int:
 
         QTimer.singleShot(0, startup)
     return app.exec()
+
+
+def _smoke_imports() -> None:
+    """Собранный бинарник должен содержать модули, которые грузятся лениво."""
+    import filelock  # noqa: F401
+    import httpx  # noqa: F401
+    import jwt
+    from cryptography.hazmat.primitives.asymmetric import rsa  # noqa: F401
+
+    import ck3loc.desktop.batch_dialog  # noqa: F401
+    import ck3loc.desktop.history_dialog  # noqa: F401
+    import ck3loc.desktop.review_dialog  # noqa: F401
+    import ck3loc.providers.chatgpt  # noqa: F401
+    from ck3loc.core import db
+    from ck3loc.core.exchange import FORMATS
+    from ck3loc.core.jobs import recover_interrupted
+
+    assert FORMATS == {"jsonl", "xliff", "yml"}
+    assert jwt.algorithms.has_crypto
+    conn = db.connect()
+    try:
+        recover_interrupted(conn)
+    finally:
+        conn.close()
 
 
 def _first_run(app) -> None:

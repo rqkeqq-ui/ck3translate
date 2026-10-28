@@ -15,7 +15,7 @@ DEFAULTS: dict = {
     "target_lang": "russian",
     "write_mode": "in_mod",       # in_mod | patch_mod
     "build_mode": "auto",         # auto | full | delta
-    "provider": "google",
+    "provider": "google_free",
     "local_mods_path": "",
     "skipped_update_version": "",
     "steam_path": "",             # пусто — определять автоматически

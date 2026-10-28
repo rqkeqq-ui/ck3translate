@@ -8,6 +8,9 @@ Bundled dependencies retain their own licenses; MIT does not replace them.
 - HTTPX: BSD-3-Clause. https://github.com/encode/httpx/blob/master/LICENSE.md
 - keyring: MIT. https://github.com/jaraco/keyring
 - watchdog: Apache-2.0. https://github.com/gorakhargosh/watchdog
+- PyJWT: MIT. https://github.com/jpadilla/pyjwt
+- cryptography: Apache-2.0 or BSD-3-Clause. https://github.com/pyca/cryptography
+- filelock: Unlicense. https://github.com/tox-dev/filelock
 - PyInstaller: GPL with a bootloader exception permitting distribution of bundled applications. https://pyinstaller.org/en/stable/license.html
 
 The portable directory keeps Qt shared libraries separate. You may replace compatible

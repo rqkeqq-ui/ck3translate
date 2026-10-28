@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from ck3loc.core import net
+
 import json
 
 from .base import ProviderError, ProviderInfo, TranslationProvider
@@ -74,7 +76,7 @@ class AnthropicProvider(TranslationProvider):
             raise ProviderError("Не задан API-ключ Anthropic. Настройки → ключи.")
         model = self.options.get("model") or "claude-sonnet-5"
         try:
-            resp = httpx.post(
+            resp = net.post(
                 "https://api.anthropic.com/v1/messages",
                 headers={
                     "x-api-key": self.api_key,
@@ -116,15 +118,17 @@ class OpenAICompatProvider(TranslationProvider):
                         glossary=None, context_types=None):
         import httpx
 
-        if not self.api_key:
+        custom_url = (self.options.get("base_url") or "").strip()
+        if not self.api_key and not custom_url:
             raise ProviderError("Не задан API-ключ. Настройки → ключи.")
-        base_url = (self.options.get("base_url")
-                    or "https://api.openai.com/v1").rstrip("/")
+        base_url = (custom_url or "https://api.openai.com/v1").rstrip("/")
         model = self.options.get("model") or "gpt-4o-mini"
+        # Локальным серверам (LM Studio, llama.cpp, Ollama) ключ не нужен.
+        headers = {"Authorization": f"Bearer {self.api_key}"} if self.api_key else {}
         try:
-            resp = httpx.post(
+            resp = net.post(
                 f"{base_url}/chat/completions",
-                headers={"Authorization": f"Bearer {self.api_key}"},
+                headers=headers,
                 json={
                     "model": model,
                     "messages": [
@@ -140,10 +144,10 @@ class OpenAICompatProvider(TranslationProvider):
             payload = resp.json()
         except httpx.HTTPStatusError as e:
             raise ProviderError(
-                f"LLM API: HTTP {e.response.status_code} — "
+                f"LLM API ({base_url}): HTTP {e.response.status_code} — "
                 f"{e.response.text[:200]}"
             ) from e
         except httpx.HTTPError as e:
-            raise ProviderError(f"LLM API: сетевая ошибка ({e})") from e
+            raise ProviderError(f"LLM API ({base_url}): сетевая ошибка ({e})") from e
         raw = payload.get("choices", [{}])[0].get("message", {}).get("content", "")
         return _parse_array(raw, len(texts))

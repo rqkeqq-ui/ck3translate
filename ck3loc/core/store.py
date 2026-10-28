@@ -52,10 +52,23 @@ def record_mod(
     conn.commit()
 
 
-def mark_missing_mods(conn: sqlite3.Connection, present_ids: set[str]) -> list[str]:
+def mark_missing_mods(conn: sqlite3.Connection, present_ids: set[str],
+                      complete_roots: list[Path] | None = None) -> list[str]:
     """Отметить моды, папок которых больше нет. Данные не удаляются."""
-    rows = conn.execute("SELECT mod_id FROM mods WHERE installed=1").fetchall()
-    gone = [r["mod_id"] for r in rows if r["mod_id"] not in present_ids]
+    rows = conn.execute("SELECT mod_id,mod_dir FROM mods WHERE installed=1").fetchall()
+
+    def removed(mod_dir: str) -> bool:
+        path = Path(mod_dir)
+        if complete_roots is None or any(path.resolve().is_relative_to(root.resolve()) for root in complete_roots):
+            return True
+        # Локальный мод вне известных корней (путь из .mod-файла): папки нет,
+        # а диск и родительская папка доступны — мод удалён, а не временно недоступен.
+        try:
+            return not path.exists() and path.parent.is_dir()
+        except OSError:
+            return False
+
+    gone = [r['mod_id'] for r in rows if r['mod_id'] not in present_ids and removed(r['mod_dir'])]
     for mod_id in gone:
         conn.execute("UPDATE mods SET installed=0 WHERE mod_id=?", (mod_id,))
     conn.commit()
@@ -211,21 +224,27 @@ def upsert_unit(
     target_text: str,
     status: str,
     provider: str = "",
+    *, origin_kind: str | None = None, model: str = "",
+    method: str = "direct", job_id: str = "",
 ) -> None:
+    from .provenance import origin_kind as classify
+    origin_kind = origin_kind or classify(provider)
     conn.execute(
         """INSERT INTO translation_units
                (project_id, key, source_text, source_hash, target_text,
-                status, provider, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                status, provider, updated_at, origin_kind, model, method, job_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(project_id, key) DO UPDATE SET
                source_text=excluded.source_text,
                source_hash=excluded.source_hash,
                target_text=excluded.target_text,
                status=excluded.status,
                provider=excluded.provider,
-               updated_at=excluded.updated_at""",
+               updated_at=excluded.updated_at,
+               origin_kind=excluded.origin_kind, model=excluded.model,
+               method=excluded.method, job_id=excluded.job_id""",
         (project_id, key, source_text, source_hash, target_text, status,
-         provider, _now()),
+         provider, _now(), origin_kind, model, method, job_id),
     )
 
 
@@ -251,19 +270,29 @@ def set_unit_written_hash(
 def tm_lookup(
     conn: sqlite3.Connection, source_lang: str, target_lang: str, source_text: str
 ) -> str | None:
+    row = tm_lookup_variant(conn, source_lang, target_lang, source_text, touch=True)
+    return row["target_text"] if row else None
+
+
+def tm_lookup_variant(conn, source_lang: str, target_lang: str, source_text: str,
+                      *, project_id: int = 0, key: str = '', touch: bool = False,
+                      allow_unreviewed_service: bool = True):
     row = conn.execute(
-        """SELECT target_text FROM translation_memory
+        """SELECT * FROM translation_memory m
            WHERE source_lang=? AND target_lang=? AND source_text=?
+             AND NOT EXISTS (SELECT 1 FROM memory_suppressions s
+                 WHERE s.project_id=? AND s.key=? AND s.memory_id=m.id)
+             AND (? OR origin_kind!='service' OR approved=1)
            ORDER BY approved DESC, id DESC LIMIT 1""",
-        (source_lang, target_lang, source_text),
+        (source_lang, target_lang, source_text, project_id, key, allow_unreviewed_service),
     ).fetchone()
-    if row:
+    if row and touch:
         conn.execute(
             """UPDATE translation_memory SET last_used_at=?
-               WHERE source_lang=? AND target_lang=? AND source_text=?""",
-            (_now(), source_lang, target_lang, source_text),
+               WHERE id=?""",
+            (_now(), row['id']),
         )
-    return row["target_text"] if row else None
+    return row
 
 
 def tm_store(
@@ -276,20 +305,26 @@ def tm_store(
     key: str = "",
     approved: bool = False,
     provider: str = "",
-) -> None:
+    *, origin_kind: str | None = None, model: str = '', method: str = 'direct',
+    job_id: str = '',
+) -> int:
+    from .provenance import origin_kind as classify
     exists = conn.execute(
         """SELECT id FROM translation_memory
            WHERE source_lang=? AND target_lang=? AND source_text=?
-             AND target_text=?""",
-        (source_lang, target_lang, source_text, target_text),
+             AND target_text=? AND provider=? AND origin_kind=?""",
+        (source_lang, target_lang, source_text, target_text, provider, origin_kind or classify(provider)),
     ).fetchone()
     if exists:
-        return
-    conn.execute(
+        return exists['id']
+    cur = conn.execute(
         """INSERT INTO translation_memory
                (source_lang, target_lang, source_text, target_text, mod_id,
-                key, approved, provider, created_at, last_used_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                key, approved, provider, created_at, last_used_at,
+                origin_kind, model, method, job_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (source_lang, target_lang, source_text, target_text, mod_id, key,
-         1 if approved else 0, provider, _now(), _now()),
+         1 if approved else 0, provider, _now(), _now(), origin_kind or classify(provider),
+         model, method, job_id),
     )
+    return cur.lastrowid

@@ -9,6 +9,9 @@ from PyInstaller.utils.hooks import copy_metadata
 datas = [(str(ROOT / 'ck3loc/lang'), 'ck3loc/lang'), (str(ROOT / 'ck3loc/community_db_config.json'), 'ck3loc')]
 hiddenimports = []
 datas += copy_metadata('keyring')
+datas += copy_metadata('PyJWT')
+datas += copy_metadata('cryptography')
+datas += copy_metadata('filelock')
 hiddenimports += collect_submodules('keyring.backends')
 
 
@@ -21,7 +24,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['tests', 'tools', 'pytest', 'unittest', 'doctest', 'tkinter'],
     noarchive=False,
     optimize=0,
 )

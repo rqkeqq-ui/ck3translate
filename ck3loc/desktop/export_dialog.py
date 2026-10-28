@@ -5,6 +5,8 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox,
+    QCheckBox,
+    QSpinBox,
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -14,17 +16,19 @@ from PySide6.QtWidgets import (
 )
 
 from ck3loc.core.i18n import tr, tr_format
-from ck3loc.core.ops import WHAT_ALL, WHAT_MISSING, WHAT_OUTDATED, WHAT_STALE
+from ck3loc.core.ops import WHAT_ALL, WHAT_MISSING, WHAT_OUTDATED, WHAT_STALE, WHAT_SELECTED
 from ck3loc.desktop.widgets import Card
 
 
 class ExportScopeDialog(QDialog):
     """Что именно выгружать: только недостающее или всё подряд."""
 
-    def __init__(self, counts: dict[str, int], parent=None):
+    def __init__(self, counts: dict[str, int], parent=None, *, ctx=None, keys=None):
         super().__init__(parent)
         self.setWindowTitle("Выгрузка задания для перевода")
-        self.resize(560, 380)
+        self.setSizeGripEnabled(True)
+        self.setMinimumWidth(620)
+        self.ctx, self.keys, self.counts = ctx, keys or set(), counts
         v = QVBoxLayout(self)
         v.setSpacing(12)
 
@@ -44,6 +48,9 @@ class ExportScopeDialog(QDialog):
             self.options.append((radio, what))
 
         add_option(
+            'Выбранные строки', WHAT_SELECTED, 'Только выделенные ключи текущего исходника.',
+        )
+        add_option(
             "Только недостающие", WHAT_MISSING,
             "Строки, которых нет ни в переводе мода, ни в вашей базе. "
             "Обычный выбор: не тратит деньги и не трогает готовый перевод.",
@@ -58,9 +65,10 @@ class ExportScopeDialog(QDialog):
             "Ничего нового, только освежить те, что разошлись с источником.",
         )
         add_option(
-            "Всё, включая перевод автора мода", WHAT_ALL,
-            "Полная переработка локализации. Осторожно: заменит собой "
-            "существующий перевод мода.",
+            "Все строки", WHAT_ALL,
+            "Все текущие ключи исходника, включая уже переведённые вами, автором "
+            "или другим модом. Готовый перевод заменяется только теми строками, "
+            "которые вы отметите при загрузке.",
         )
         v.addWidget(card)
 
@@ -69,8 +77,15 @@ class ExportScopeDialog(QDialog):
         self.fmt = QComboBox()
         self.fmt.addItem("JSONL — для нейросети в чате", "jsonl")
         self.fmt.addItem("XLIFF 2.1 — для переводческих программ", "xliff")
+        self.fmt.addItem('CK3 YML', 'yml')
         fmt_row.addWidget(self.fmt, stretch=1)
         v.addLayout(fmt_row)
+        from ck3loc.desktop.tasks import SplitControl
+        self.splitter = SplitControl()
+        v.addWidget(self.splitter)
+        self.preview = QLabel()
+        self.preview.setWordWrap(True)
+        v.addWidget(self.preview)
 
         btns = QHBoxLayout()
         btns.addStretch(1)
@@ -90,6 +105,34 @@ class ExportScopeDialog(QDialog):
                 break
         else:
             self.btn_ok.setEnabled(False)
+        for radio, _ in self.options:
+            radio.toggled.connect(self.update_preview)
+        self.adjustSize()  # высота по содержимому: подсказки не обрезаются
+        self.splitter.changed.connect(self.update_preview)
+        self.fmt.currentIndexChanged.connect(self.update_preview)
+        self.update_preview()
+
+    def split_kwargs(self) -> dict:
+        return self.splitter.kwargs()
+
+    def archives(self):
+        """Совместимость: число архивов при делении «на число архивов»."""
+        return self.split_kwargs().get('archives')
+
+    def part_size(self):
+        """Совместимость: теперь задаётся число архивов, а не строк в файле."""
+        return None
+
+    def update_preview(self, *_):
+        from ck3loc.core.exchange import describe_sizes, package_sizes
+        from ck3loc.core.ops import rows_to_translate
+        total = (len(rows_to_translate(self.ctx, self.scope(), self.keys)) if self.ctx
+                 else self.counts.get(self.scope(), 0))
+        sizes = package_sizes(total, **self.split_kwargs())
+        self.btn_ok.setEnabled(bool(sizes))
+        self.preview.setText(tr_format('Строк: {n}. Будет создано ZIP-архивов: {parts} ({sizes} строк) '
+                                       'и один файл с промптом рядом с ними.',
+                                       n=total, parts=len(sizes), sizes=describe_sizes(sizes)))
 
     def scope(self) -> str:
         for radio, what in self.options:

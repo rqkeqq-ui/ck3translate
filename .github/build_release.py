@@ -73,8 +73,13 @@ def main() -> None:
         archive = shutil.make_archive(str(stem), "zip" if system == "windows" else "gztar",
                                       root_dir=dist, base_dir="CK3LocalizationManager")
     path = Path(archive)
+    from audit_bundle import audit_bundle
+    audit_bundle(dist / ('CK3LocalizationManager.app' if system == 'darwin' else 'CK3LocalizationManager'), executable)
     digest = hashlib.file_digest(path.open("rb"), "sha256").hexdigest()
     path.with_name(path.name + ".sha256").write_text(f"{digest}  {path.name}\n", encoding="utf-8")
+    if os.environ.get('GITHUB_OUTPUT'):
+        with Path(os.environ['GITHUB_OUTPUT']).open('a', encoding='utf-8') as output:
+            output.write(f'assets<<CK3LOC_ASSETS\n{path}\n{path}.sha256\nCK3LOC_ASSETS\n')
     print(f"Release ready: {path.name}")
 
 

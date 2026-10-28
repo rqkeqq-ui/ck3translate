@@ -179,6 +179,9 @@ class SettingsPage(QWidget):
         cr.addWidget(refresh_community)
         community_card.add(community_row)
         v.addWidget(community_card)
+        from ck3loc.desktop.chatgpt_settings import ChatGPTSettings
+        self.chatgpt_settings = ChatGPTSettings(self)
+        v.addWidget(self.chatgpt_settings)
 
         # --- провайдеры ---
         keys_card = Card("Ключи API переводчиков")
@@ -194,6 +197,8 @@ class SettingsPage(QWidget):
         self.key_edits: dict[str, QLineEdit] = {}
         self.key_states: dict[str, QLabel] = {}
         for name, cls in PROVIDERS.items():
+            if not cls.info.needs_key:
+                continue
             row = QWidget()
             hl = QHBoxLayout(row)
             hl.setContentsMargins(0, 0, 0, 0)
@@ -362,6 +367,9 @@ class SettingsPage(QWidget):
 
     # ---------- обработчики ----------
 
+    def shutdown(self):
+        self.chatgpt_settings.shutdown()
+
     def _refresh_keys(self):
         for name, label in self.key_states.items():
             label.setText("ключ сохранён" if get_api_key(name) else "ключа нет")
@@ -397,30 +405,15 @@ class SettingsPage(QWidget):
             enabled=self.community_enabled.isChecked()
         )
         database = result.database
-        if result.state == "ready" and database is not None:
-            self.community_status.setText(
-                f"Подключена версия {database.database_version} · "
-                f"терминов {len(database.glossaries)} · "
-                f"связей {len(database.translations)}"
-            )
-        elif result.state == "incompatible" and database is not None:
-            self.community_status.setText(
-                "Нужно обновить приложение до версии "
-                f"{database.minimum_app_version} или новее."
-            )
-        elif result.state == "invalid":
-            detail = result.errors[0] if result.errors else "ошибка формата"
-            self.community_status.setText(f"База повреждена: {detail}")
-        elif result.state == "downloading":
-            self.community_status.setText("Подписка найдена, Steam ещё загружает файлы.")
-        elif result.state == "disabled":
-            self.community_status.setText("Отключена в настройках.")
-        elif result.workshop_id:
-            self.community_status.setText("Не установлена или нет подписки.")
-        else:
+        from ck3loc.core.community_db import describe_state
+        if result.state == "missing" and not result.workshop_id:
             self.community_status.setText(
                 "База готовится к публикации. Приложение уже можно использовать без подписки."
             )
+        else:
+            self.community_status.setText(describe_state(
+                result, source_lang=settings.get("source_lang") or "english",
+                target_lang=settings.get("target_lang") or "russian"))
         item_id = database.workshop_id if database else result.workshop_id
         workshop_url = workshop_page_url(item_id)
         self.community_open.setText("Открыть в Workshop" if workshop_url else "Новости на GitHub")

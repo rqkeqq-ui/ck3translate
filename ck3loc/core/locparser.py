@@ -270,18 +270,15 @@ def _decode_body(raw: bytes, has_bom: bool) -> tuple[str, bytes, bool]:
         return body.decode("utf-8", errors="replace"), eol, False
 
 
+# Неэкранированная кавычка: обычные символы или пары «\\x»; атомарные
+# группы исключают откат на длинных строках (поиск в C вместо цикла Python).
+_CLOSING_QUOTE_RE = re.compile(r'(?:[^"\\]++|\\.)*+"', re.DOTALL)
+
+
 def _find_closing_quote(text: str, start: int) -> int:
     """Индекс неэкранированной закрывающей кавычки после start (или -1)."""
-    i = start
-    while i < len(text):
-        ch = text[i]
-        if ch == "\\":
-            i += 2
-            continue
-        if ch == '"':
-            return i
-        i += 1
-    return -1
+    m = _CLOSING_QUOTE_RE.match(text, start)
+    return m.end() - 1 if m else -1
 
 
 def _try_parse_multiline(

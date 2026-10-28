@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from ck3loc.core import net
+
 from dataclasses import dataclass
 
 _API_URL = (
@@ -42,7 +44,7 @@ def fetch_details(item_ids: list[str], timeout: float = 10.0) -> dict[str, Works
     for i, item in enumerate(item_ids):
         data[f"publishedfileids[{i}]"] = str(item)
     try:
-        resp = httpx.post(_API_URL, data=data, timeout=timeout)
+        resp = net.post(_API_URL, data=data, timeout=timeout)
         resp.raise_for_status()
         payload = resp.json()
     except Exception:

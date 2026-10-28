@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from ck3loc.core import net
+
 from pathlib import Path
 
 from .db import data_dir
@@ -28,7 +30,7 @@ def _download(url: str, dest: Path) -> bool:
     try:
         import httpx
 
-        with httpx.stream("GET", url, timeout=20.0, follow_redirects=True) as r:
+        with net.client(url, timeout=20.0, follow_redirects=True) as c, c.stream("GET", url) as r:
             r.raise_for_status()
             size = 0
             tmp = dest.with_suffix(".part")

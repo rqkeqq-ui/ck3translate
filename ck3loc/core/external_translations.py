@@ -77,7 +77,8 @@ class ProviderCandidate:
 
 def _latest_snapshots(conn: sqlite3.Connection) -> dict[str, int]:
     rows = conn.execute(
-        "SELECT mod_id, MAX(id) AS sid FROM mod_snapshots GROUP BY mod_id"
+        """SELECT s.mod_id, MAX(s.id) AS sid FROM mod_snapshots s
+           JOIN mods m ON m.mod_id=s.mod_id WHERE m.installed=1 GROUP BY s.mod_id"""
     ).fetchall()
     return {r["mod_id"]: r["sid"] for r in rows}
 
@@ -309,6 +310,8 @@ def get_provider(
         (mod_id, target_lang),
     ).fetchone()
     if row is None or not row["provider_mod_id"]:
+        return None
+    if row['provider_mod_id'] not in _latest_snapshots(conn):
         return None
     return row
 
@@ -543,8 +546,9 @@ def providers_index(
     return {
         r["mod_id"]: r["provider_mod_id"]
         for r in conn.execute(
-            """SELECT mod_id, provider_mod_id FROM translation_providers
-               WHERE target_lang=? AND provider_mod_id != ''""",
+            """SELECT p.mod_id, p.provider_mod_id FROM translation_providers p
+               JOIN mods m ON m.mod_id=p.provider_mod_id AND m.installed=1
+               WHERE p.target_lang=? AND p.provider_mod_id != ''""",
             (target_lang,),
         )
     }
@@ -554,8 +558,9 @@ def provider_roles(conn: sqlite3.Connection, target_lang: str) -> dict[str, list
     """provider_mod_id → какие моды он переводит (для пометки в библиотеке)."""
     out: dict[str, list[str]] = {}
     for r in conn.execute(
-        """SELECT mod_id, provider_mod_id FROM translation_providers
-           WHERE target_lang=? AND provider_mod_id != ''""",
+        """SELECT p.mod_id, p.provider_mod_id FROM translation_providers p
+           JOIN mods m ON m.mod_id=p.provider_mod_id AND m.installed=1
+           WHERE p.target_lang=? AND p.provider_mod_id != ''""",
         (target_lang,),
     ):
         out.setdefault(r["provider_mod_id"], []).append(r["mod_id"])

@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMenu,
     QPushButton,
     QStackedWidget,
     QTableWidget,
@@ -48,7 +49,7 @@ ERRORS = "С ошибками"
 NO_LOC = "Без локализации"
 # «Все моды» — не пункт списка, а состояние «ничего не выбрано»
 FILTERS = [NO_TRANSLATION, PARTIAL, FULL, EXTERNAL, RUSSIFIERS,
-           MINE, ERRORS, NO_LOC]
+           MINE, ERRORS, NO_LOC, 'LLM', 'Сервисы', 'Ручной']
 
 
 class LibraryPage(QWidget):
@@ -77,7 +78,7 @@ class LibraryPage(QWidget):
                               "Моды, где целевого языка нет совсем")
         self.tile_partial = Tile("Неполный", "warn", theme,
                                  "Перевод есть, но отстаёт от источника")
-        self.tile_full = Tile("Готово", "ok", theme,
+        self.tile_full = Tile("Полностью заполнено", "ok", theme,
                               "Перевод полный")
         self.tile_external = Tile("Чужой перевод", "info", theme,
                                   "Переведены отдельными модами-русификаторами")
@@ -107,11 +108,13 @@ class LibraryPage(QWidget):
         self.btn_batch = QPushButton("Перевести все моды, где перевода нет…")
         self.btn_batch.clicked.connect(self.batch.emit)
         controls.addWidget(self.btn_batch)
-        self.btn_mod_dir = QPushButton("Папка модов CK3")
+        self.btn_mod_dir = QPushButton("Папки модов CK3")
         self.btn_mod_dir.setToolTip(
             "Открыть Documents\\Paradox Interactive\\Crusader Kings III\\mod"
         )
-        self.btn_mod_dir.clicked.connect(self.open_mod_dir)
+        self.folder_menu = QMenu(self)
+        self.folder_menu.aboutToShow.connect(self.refresh_folder_menu)
+        self.btn_mod_dir.setMenu(self.folder_menu)
         controls.addWidget(self.btn_mod_dir)
         controls.addSpacing(10)
         self.search = QLineEdit()
@@ -217,6 +220,8 @@ class LibraryPage(QWidget):
         return not modes or any(self._passes(r, mode) for mode in modes)
 
     def _passes(self, r: ModRow, mode: str) -> bool:
+        if mode in {'LLM', 'Сервисы', 'Ручной'}:
+            return bool(r.origins.get({'LLM':'llm','Сервисы':'service','Ручной':'manual'}[mode]))
         if mode == NO_TRANSLATION:
             return r.has_loc and r.coverage == 0.0
         if mode == PARTIAL:
@@ -339,6 +344,17 @@ class LibraryPage(QWidget):
             elif not r.has_loc:
                 state.setForeground(QColor(c["text_dim"]))
             self.table.setItem(i, 4, state)
+            if r.origins:
+                from ck3loc.core.i18n import tr
+                kinds = ('llm', 'service', 'manual', 'vanilla', 'native', 'external_mod', 'unknown')
+                summary = ' · '.join(f'{tr(kind)} {r.origins[kind]}' for kind in kinds if r.origins.get(kind))
+                summary += ' · ' + tr_format('проверено {n}', n=r.origins.get('reviewed', 0))
+                if r.origins.get('unreviewed_service'):
+                    summary += ' · ' + tr_format('непроверенных переводов сервисов {n}',
+                                                 n=r.origins['unreviewed_service'])
+                if sum(bool(r.origins.get(k)) for k in kinds) > 1:
+                    summary = tr('Смешанный перевод') + ' · ' + summary
+                state.setToolTip((state.toolTip() + '\n' + summary).strip())
 
             upd = SortItem(r.updated or "—", r.updated_ts)
             upd.setForeground(QColor(c["text_dim"]))
@@ -415,11 +431,37 @@ class LibraryPage(QWidget):
         from ck3loc.core.writer import pdx_mod_dir
 
         path = pdx_mod_dir()
-        path.mkdir(parents=True, exist_ok=True)
         from PySide6.QtCore import QUrl
         from PySide6.QtGui import QDesktopServices
 
-        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve())))
+        if path.is_dir():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve())))
+
+    def refresh_folder_menu(self):
+        from ck3loc.core.mod_library import local_mods_dir
+        from ck3loc.core.steam import find_steam_root, workshop_content_dirs
+        from ck3loc.core.i18n import tr
+        from pathlib import Path
+        self.folder_menu.clear()
+        def add(menu, label, path):
+            action = menu.addAction(label + ' · ' + str(path))
+            action.setEnabled(path.is_dir())
+            action.triggered.connect(lambda: self.open_folder(path))
+        add(self.folder_menu, tr('Локальные моды'), local_mods_dir())
+        submenu = self.folder_menu.addMenu('Steam Workshop')
+        root = find_steam_root(Path(settings.get('steam_path')) if settings.get('steam_path') else None)
+        paths = workshop_content_dirs(root) if root else []
+        if not paths:
+            action = submenu.addAction(tr('Не найдено — укажите путь в Настройках'))
+            action.setEnabled(False)
+        for path in paths:
+            add(submenu, path.drive or path.anchor, path)
+
+    def open_folder(self, path):
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        if path.is_dir():
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.resolve())))
 
     def focus_search(self):
         self.search.setFocus()

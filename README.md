@@ -24,7 +24,7 @@ Scan Steam Workshop subscriptions and local CK3 mods together. Choose your local
 
 ### Translate your way
 
-Export a JSONL task with a ready-to-use prompt, send it to ChatGPT, Claude, DeepSeek or another chat, then import the result. No API key is needed for this workflow; free access depends on the chat service. Or connect Google, DeepL, Yandex, Claude and OpenAI-compatible APIs directly in the app. Provider pricing and limits apply. XLIFF exchange is available for translation tools.
+Export a JSONL task with a ready-to-use prompt, send it to ChatGPT, Claude, DeepSeek or another chat, then import the result. No API key is needed for this workflow; free access depends on the chat service. Or translate in the app: "Google Translate · free" works without a key (unofficial public gateway with rate limits), Google Cloud, DeepL, Yandex, Claude and OpenAI-compatible APIs work with your key, and a local AI server (LM Studio, llama.cpp, Ollama) works by URL without a key. A ChatGPT subscription can be used through Sign in with ChatGPT (preview, paid plan required). Provider pricing and limits apply. XLIFF exchange is available for translation tools.
 
 ### Keep the work you have already done
 
@@ -52,6 +52,10 @@ Actual application screens, shown in English with fictional demonstration mods. 
 4. Open a mod, translate missing text, review the result and write your translation.
 
 Windows x64, Linux x64 and macOS Apple Silicon are built separately. Check the release notes for available downloads and platform limitations. [User guide](docs/USER_GUIDE.en.md) · [Руководство на русском](docs/USER_GUIDE.ru.md).
+
+## New in 0.3.0
+
+Translations now go through a draft: export, import and translation never change a mod until you choose **Apply selected** and **Write translation to the game**. Fix individual lines even at 100%, split large AI jobs into parts and import all answers at once, undo applied translations in **Action history**, and selectively remove unreviewed Google/DeepL/Yandex results. Translation origin (LLM, service, manual, mod author…) is tracked separately from review status. See the [user guide](docs/USER_GUIDE.en.md).
 
 ## Community Database — growing with the community
 

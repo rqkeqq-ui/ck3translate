@@ -410,6 +410,8 @@ def import_community_glossary(conn, database: CommunityDatabase) -> GlossaryImpo
                 updated += 1
         conn.execute("RELEASE SAVEPOINT community_glossary")
         conn.commit()
+        from .ops import invalidate_community_cache
+        invalidate_community_cache()
         return GlossaryImportResult(added, updated, skipped)
     except Exception:
         conn.execute("ROLLBACK TO SAVEPOINT community_glossary")
@@ -432,3 +434,54 @@ def workshop_page_url(workshop_id: str = "") -> str:
         f"https://steamcommunity.com/sharedfiles/filedetails/?id={item_id}"
         if item_id.isdigit() else ""
     )
+
+
+def describe_state(
+    result: DiscoveryResult,
+    *,
+    source_lang: str = "",
+    target_lang: str = "",
+    imported: GlossaryImportResult | None = None,
+) -> str:
+    """Одна понятная строка состояния базы для Настроек, Глоссария и уведомлений.
+
+    Число терминов — фактическое содержимое базы, а не результат импорта:
+    «+0/~0» означает «изменений нет», а не «база пуста».
+    """
+    from .i18n import tr, tr_format
+
+    database = result.database
+    if result.state == "disabled":
+        return tr("Отключена в настройках.")
+    if result.state == "downloading":
+        return tr("Подписка найдена, Steam ещё загружает файлы.")
+    if result.state == "invalid":
+        detail = result.errors[0] if result.errors else tr("ошибка формата")
+        return tr_format("База повреждена: {detail}", detail=detail)
+    if result.state == "incompatible" and database is not None:
+        return tr_format(
+            "Требуется новая версия приложения: {version} или новее.",
+            version=database.minimum_app_version,
+        )
+    if result.state != "ready" or database is None:
+        return tr("Не найдена: подпишитесь в Steam Workshop или проверьте путь к Steam.")
+    pair_terms = sum(
+        1 for t in database.glossaries
+        if (not source_lang or t.source_lang == source_lang)
+        and (not target_lang or t.target_lang == target_lang)
+    )
+    parts = [tr_format(
+        "Установлена версия {version} · терминов {total}, для текущей пары {pair}",
+        version=database.database_version, total=len(database.glossaries), pair=pair_terms,
+    )]
+    if database.translations:
+        parts.append(tr_format("связей русификаторов {n}", n=len(database.translations)))
+    else:
+        parts.append(tr("Связей русификаторов в этой версии базы нет"))
+    if imported is not None:
+        if imported.added or imported.updated:
+            parts.append(tr_format("добавлено {added}, обновлено {updated}",
+                                   added=imported.added, updated=imported.updated))
+        else:
+            parts.append(tr("База подключена. Изменений нет"))
+    return " · ".join(parts)

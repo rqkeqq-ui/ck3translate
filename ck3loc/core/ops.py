@@ -58,6 +58,45 @@ def find_mod_dir(mod_id: str, steam_path: Path | None = None) -> Path | None:
     return None
 
 
+# Открытие мода не должно каждый раз перечитывать и импортировать базу:
+# на больших библиотеках это секунды на каждый клик. Сканирование и кнопка
+# «Обновить из установленной базы» импортируют явно и сбрасывают кеш.
+_COMMUNITY_TTL = 60.0
+_community_cache: dict = {}
+_imported_versions: set = set()
+
+
+def cached_community_database(steam_path: Path | None = None, *, enabled: bool = True):
+    import time
+
+    from .community_db import discover_community_database
+
+    key = (str(steam_path or ''), enabled)
+    hit = _community_cache.get(key)
+    if hit and time.monotonic() - hit[0] < _COMMUNITY_TTL:
+        return hit[1]
+    result = discover_community_database(steam_path, enabled=enabled)
+    _community_cache[key] = (time.monotonic(), result)
+    return result
+
+
+def invalidate_community_cache() -> None:
+    _community_cache.clear()
+    _imported_versions.clear()
+
+
+def _import_community_once(conn, community) -> None:
+    from .community_db import import_community_glossary
+    from .db import data_dir
+
+    # Импорт привязан к файлу базы данных: тесты и разные профили не смешиваются.
+    marker = (str(data_dir()), str(community.root), community.database_version)
+    if marker in _imported_versions:
+        return
+    import_community_glossary(conn, community)
+    _imported_versions.add(marker)
+
+
 def load_project_context(
     conn,
     mod_id: str,
@@ -71,19 +110,17 @@ def load_project_context(
     if mod_dir is None:
         return None
     from . import settings
-    from .community_db import discover_community_database
 
     cfg = settings.load()
-    community_result = discover_community_database(
+    community_result = cached_community_database(
         steam_path, enabled=bool(cfg.get("community_db_enabled", True))
     )
     community = community_result.database
     if community_result.state == "ready" and community is not None:
-        from .community_db import import_community_glossary
-
-        import_community_glossary(conn, community)
+        _import_community_once(conn, community)
     rule = community.mod_rules.get(mod_id) if community else None
-    scan = scan_mod(mod_dir, game_languages(), rule=rule, mod_id=mod_id)
+    owned = {str(Path(r[0]).resolve()) for r in conn.execute('SELECT abs_path FROM generated_outputs')}
+    scan = scan_mod(mod_dir, game_languages(), rule=rule, mod_id=mod_id, owned_paths=owned)
     # авто-подсказка источника: самый полный язык
     best = (
         scan.source_language_hint
@@ -116,9 +153,11 @@ WHAT_MISSING = "missing"      # только непереведённые
 WHAT_STALE = "stale"          # только устаревшие
 WHAT_OUTDATED = "outdated"    # непереведённые + устаревшие (обычный выбор)
 WHAT_ALL = "all"              # плюс строки, переведённые самим модом
+WHAT_SELECTED = "selected"
 
 
-def rows_to_translate(ctx: ProjectContext, what: str = WHAT_OUTDATED) -> list[dict]:
+def rows_to_translate(ctx: ProjectContext, what: str = WHAT_OUTDATED,
+                      keys: set[str] | None = None) -> list[dict]:
     """Строки для выгрузки/перевода: [{key, source}].
 
     Строки, покрытые сторонним модом-русификатором, в «недостающие»
@@ -132,9 +171,16 @@ def rows_to_translate(ctx: ProjectContext, what: str = WHAT_OUTDATED) -> list[di
     if what == WHAT_ALL:
         # полная переработка: берём и то, что перевёл сам автор мода
         statuses.add(NATIVE)
-    wanted = {r.key for r in ctx.rows if r.status in statuses}
+    if what not in {WHAT_MISSING, WHAT_STALE, WHAT_OUTDATED, WHAT_ALL, WHAT_SELECTED}:
+        raise ValueError('Unknown translation scope')
     src = ctx.source_values
-    return [{"key": k, "source": src[k]} for k in sorted(wanted) if k in src]
+    wanted = (set(src) if what == WHAT_ALL else set(keys or ()) if what == WHAT_SELECTED
+              else {r.key for r in ctx.rows if r.status in statuses})
+    current = {r.key: r.target_text or r.native_target or '' for r in ctx.rows}
+    summary = ctx.scan.languages.get(ctx.project['source_lang'])
+    return [{"key": k, "source": src[k], 'current_target': current.get(k, ''),
+             'rel_path': summary.keys[k].rel_path}
+            for k in sorted(wanted) if k in src]
 
 
 def counts_by_scope(ctx: ProjectContext) -> dict[str, int]:
@@ -146,27 +192,13 @@ def counts_by_scope(ctx: ProjectContext) -> dict[str, int]:
 
 
 def apply_import_report(
-    ctx: ProjectContext, report: ImportReport, provider: str = "external_llm"
+    ctx: ProjectContext, report: ImportReport, provider: str | None = None,
+    *, keys: set[str] | None = None,
 ) -> int:
-    """Принятые строки → база (статус «машинный») + память переводов."""
-    src = ctx.source_values
-    count = 0
-    for item in report.accepted:
-        source_text = src.get(item.key)
-        if source_text is None:
-            continue
-        upsert_unit(
-            ctx.conn, ctx.project_id, item.key, source_text,
-            semantic_hash(source_text), item.target, MACHINE, provider,
-        )
-        tm_store(
-            ctx.conn, ctx.project["source_lang"], ctx.project["target_lang"],
-            source_text, item.target, ctx.project["mod_id"], item.key,
-            approved=False, provider=provider,
-        )
-        count += 1
-    ctx.conn.commit()
-    return count
+    """Compatibility entry point: additions by default, replacements by selection."""
+    from .exchange import stage_import
+    from .jobs import apply_job
+    return len(apply_job(ctx, stage_import(ctx, report, provider), keys).changed)
 
 
 def acf_time_updated(mod_id: str) -> int:

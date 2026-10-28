@@ -5,6 +5,7 @@ from __future__ import annotations
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QSizePolicy,
     QButtonGroup,
     QDialog,
     QFrame,
@@ -110,6 +111,9 @@ class MainWindow(QMainWindow):
         # статус-строка
         status = self.statusBar()
         self.status_label = QLabel("Готово")
+        # Длинное уведомление не должно выдавливать кнопку «Уведомления».
+        self.status_label.setMinimumWidth(1)
+        self.status_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         status.addWidget(self.status_label, stretch=1)
         self.progress = QProgressBar()
         self.progress.setMaximumWidth(260)
@@ -126,6 +130,7 @@ class MainWindow(QMainWindow):
         self.worker: ScanWorker | None = None
         if self.cfg.get("scan_on_start", True):
             QTimer.singleShot(300, self.start_scan)
+        QTimer.singleShot(0, self._check_interrupted_jobs)
 
     def _build_shortcuts(self):
         QShortcut(QKeySequence("F5"), self, activated=self.start_scan)
@@ -239,6 +244,10 @@ class MainWindow(QMainWindow):
         self.status_label.setText(f"Сканирование: {i} из {total} — {name}")
 
     def _on_scan_done(self, rows: list):
+        self.glossary.invalidate()
+        if self.mod_page.ctx:
+            self.mod_page._mod_dir = None
+            self.mod_page.reload()
         self.library.set_rows(rows)
         self.library.set_busy(False)
         self.progress.hide()
@@ -272,41 +281,31 @@ class MainWindow(QMainWindow):
         ctx = self.mod_page.ctx
         if ctx is None:
             return
-        rows = rows_to_translate(ctx, "all")
-        if not rows:
-            QMessageBox.information(self, "Перевод",
-                                    "Переводить нечего — всё актуально.")
-            return
-        self.status_label.setText("Считаю смету…")
-        vl = build_vanilla_lookup(ctx.project["source_lang"],
-                                  ctx.project["target_lang"])
-        est = estimate(ctx, rows, vanilla_lookup=vl)
-        api_rows = est.rows - est.covered_by_vanilla - est.covered_by_memory
-        c = palette(self.theme)
-        html = (
-            f"Строк на перевод: <b>{est.rows}</b><br>"
-            f"<span style='color:{c['ok']}'>Закроется ванилью CK3 бесплатно: "
-            f"{est.covered_by_vanilla}</span><br>"
-            f"<span style='color:{c['ok']}'>Закроется памятью переводов: "
-            f"{est.covered_by_memory}</span><br>"
-            f"Уйдёт в API: <b>{api_rows}</b> строк, ~{est.chars_to_api} символов"
-        )
-        self.status_label.setText("Готово")
-        dlg = TranslateDialog(mod_id, html, parent=self)
+        dlg = TranslateDialog(mod_id, parent=self, ctx=ctx)
         dlg.exec()
-        if dlg.stats is not None:
-            self.add_note(
-                f"«{ctx.scan.name}»: переведено {dlg.stats.translated} строк "
-                f"(ошибок {len(dlg.stats.failed)})"
-            )
         self.mod_page.reload()
-
     def open_batch(self):
         from ck3loc.desktop.translate_dialog import BatchDialog
 
         dlg = BatchDialog(parent=self)
         dlg.exec()
         self.add_note("Пакетный перевод: сессия закрыта.")
+
+    def _check_interrupted_jobs(self):
+        """Предложить продолжить задания, прерванные закрытием приложения."""
+        from ck3loc.core import db
+        from ck3loc.core.i18n import tr_format
+        from ck3loc.core.jobs import recover_interrupted
+        conn = db.connect()
+        try:
+            pending = recover_interrupted(conn)
+        finally:
+            conn.close()
+        if pending:
+            self.add_note(tr_format(
+                'Незавершённых заданий перевода: {n} (строк: {rows}). Откройте карточку мода → '
+                '«История действий», чтобы продолжить, проверить или отменить их.',
+                n=len(pending), rows=sum(j['pending'] for j in pending)))
 
     def _langs_changed(self):
         self.add_note("Языки изменены — пересканируйте библиотеку.")
@@ -333,10 +332,12 @@ class MainWindow(QMainWindow):
 
         entry = f"[{time.strftime('%H:%M')}] {text}"
         self.notifications.append(entry)
-        self.btn_notes.setText(f"Уведомления ({len(self.notifications)})")
+        # Сначала жирный стиль, потом текст: ширина кнопки считается по итоговому шрифту.
         self.btn_notes.setStyleSheet(
-            f"color: {palette(self.theme)['accent']}; font-weight: 600;"
+            f"color: {palette(self.theme)['accent']}; font-weight: 600; padding: 4px 14px;"
         )
+        self.btn_notes.setText(f"{tr('Уведомления')} ({len(self.notifications)})")
+        self.btn_notes.setMinimumWidth(self.btn_notes.sizeHint().width())
         self.status_label.setText(text)
 
     def show_notifications(self):
@@ -346,7 +347,21 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event):
         if self.worker is not None and self.worker.isRunning():
             self.worker.stop()
-            self.worker.wait(3000)
+            self.worker.finished.connect(self.close)
+            event.ignore()
+            return
+        from ck3loc.desktop.translate_dialog import background_workers
+        active = [w for w in self.settings_page.chatgpt_settings.workers if w.isRunning()]
+        for worker in background_workers():
+            # Закрытие приложения останавливает фоновые задания; готовое остаётся в черновике.
+            active.append(worker)
+        if active:
+            for worker in active:
+                worker.cancellation.cancel()
+                worker.finished.connect(self.close, Qt.ConnectionType.UniqueConnection)
+            event.ignore()
+            return
         self.mod_page.close_db()
         self.glossary.close_db()
+        self.settings_page.shutdown()
         super().closeEvent(event)

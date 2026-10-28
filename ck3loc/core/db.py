@@ -10,7 +10,7 @@ import os
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (
@@ -128,6 +128,46 @@ CREATE TABLE IF NOT EXISTS export_units (
     source_hash TEXT NOT NULL,
     PRIMARY KEY (export_id, unit_id)
 );
+CREATE TABLE IF NOT EXISTS translation_jobs (
+    id TEXT PRIMARY KEY, project_id INTEGER NOT NULL,
+    state TEXT NOT NULL DEFAULT 'draft', provider TEXT DEFAULT '',
+    model TEXT DEFAULT '', options TEXT DEFAULT '{}', created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS job_results (
+    job_id TEXT NOT NULL, key TEXT NOT NULL, source_text TEXT NOT NULL,
+    baseline TEXT NOT NULL, target_text TEXT, provenance TEXT DEFAULT '{}',
+    error TEXT DEFAULT '', applied INTEGER DEFAULT 0,
+    PRIMARY KEY(job_id, key)
+);
+CREATE TABLE IF NOT EXISTS translation_actions (
+    id TEXT PRIMARY KEY, project_id INTEGER NOT NULL, kind TEXT NOT NULL,
+    created_at TEXT NOT NULL, undone INTEGER DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS action_rows (
+    action_id TEXT NOT NULL, key TEXT NOT NULL, before_json TEXT NOT NULL,
+    after_json TEXT NOT NULL, memory_id INTEGER, suppression_json TEXT DEFAULT '[]',
+    undone INTEGER DEFAULT 0, PRIMARY KEY(action_id, key)
+);
+CREATE TABLE IF NOT EXISTS memory_suppressions (
+    project_id INTEGER NOT NULL, key TEXT NOT NULL, memory_id INTEGER NOT NULL,
+    PRIMARY KEY(project_id, key, memory_id)
+);
+CREATE TABLE IF NOT EXISTS export_parts (
+    export_id TEXT NOT NULL, part INTEGER NOT NULL, path TEXT NOT NULL,
+    keys_json TEXT NOT NULL, PRIMARY KEY(export_id, part)
+);
+CREATE TABLE IF NOT EXISTS export_returns (
+    export_id TEXT NOT NULL, key TEXT NOT NULL, target_text TEXT NOT NULL,
+    PRIMARY KEY(export_id, key)
+);
+CREATE TABLE IF NOT EXISTS export_packages (
+    package TEXT NOT NULL, archive INTEGER NOT NULL, export_id TEXT NOT NULL,
+    PRIMARY KEY(package, export_id)
+);
+CREATE TABLE IF NOT EXISTS output_paths (
+    project_id INTEGER NOT NULL, logical_path TEXT NOT NULL, abs_path TEXT NOT NULL,
+    PRIMARY KEY(project_id, logical_path), UNIQUE(abs_path)
+);
 """
 
 
@@ -149,6 +189,19 @@ def _migrate(conn: sqlite3.Connection) -> None:
         conn, "glossary_terms", "target_lang", "TEXT DEFAULT 'russian'"
     )
     _ensure_column(conn, "glossary_terms", "origin", "TEXT DEFAULT 'user'")
+    for table in ("translation_units", "translation_memory"):
+        _ensure_column(conn, table, "origin_kind", "TEXT DEFAULT 'unknown'")
+        _ensure_column(conn, table, "model", "TEXT DEFAULT ''")
+        _ensure_column(conn, table, "method", "TEXT DEFAULT 'direct'")
+        _ensure_column(conn, table, "job_id", "TEXT DEFAULT ''")
+        conn.execute(f"""UPDATE {table} SET origin_kind=CASE
+            WHEN provider IN ('google','deepl','yandex') THEN 'service'
+            WHEN provider IN ('openai','claude','chatgpt','external_llm') THEN 'llm'
+            WHEN provider IN ('manual','vanilla','native','external_mod') THEN provider
+            ELSE 'unknown' END WHERE origin_kind='unknown'""")
+    _ensure_column(conn, "export_units", "baseline", "TEXT DEFAULT ''")
+    conn.execute("""CREATE INDEX IF NOT EXISTS idx_glossary_pair_term
+        ON glossary_terms(source_lang,target_lang,source_term,level,mod_id)""")
     conn.execute(
         """INSERT INTO meta(key, value) VALUES ('schema_version', ?)
            ON CONFLICT(key) DO UPDATE SET value=excluded.value""",
@@ -179,7 +232,22 @@ def connect(db_path: Path | None = None) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("PRAGMA foreign_keys=ON")
+    has_meta = conn.execute("SELECT 1 FROM sqlite_master WHERE name='meta'").fetchone()
+    version = None
+    if has_meta:
+        version = conn.execute("SELECT value FROM meta WHERE key='schema_version'").fetchone()
+        if version and int(version[0]) < SCHEMA_VERSION:
+            backup_path = path.with_name(path.name + f'.v{version[0]}.bak')
+            if not backup_path.exists():
+                backup = sqlite3.connect(str(backup_path))
+                try:
+                    conn.backup(backup)
+                finally:
+                    backup.close()
     conn.executescript(SCHEMA)
-    _migrate(conn)
+    # Миграция проходит по всем строкам памяти переводов — на больших базах
+    # это доли секунды на каждое подключение, поэтому только при смене версии.
+    if not version or int(version[0]) < SCHEMA_VERSION:
+        _migrate(conn)
     conn.commit()
     return conn

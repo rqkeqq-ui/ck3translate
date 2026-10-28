@@ -66,23 +66,26 @@ def export_jsonl(
     source_lang: str,
     target_lang: str,
     glossary: list[tuple[str, str]] | None = None,
+    *, export_id: str | None = None, offset: int = 0,
 ) -> ExportResult:
     """rows: [{key, source}] — строки на перевод (уже отфильтрованные)."""
-    export_id = uuid.uuid4().hex[:12]
+    export_id = export_id or uuid.uuid4().hex
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     lines = []
     reg_rows = []
-    for i, row in enumerate(rows, start=1):
+    for i, row in enumerate(rows, start=1 + offset):
         unit_id = f"u{i:04d}"
         prot = protect(row["source"])
         obj = {
+            'export_id': export_id,
             "id": unit_id,
             "key": row["key"],
             "type": key_type(row["key"]),
             "source": prot.text,
             "tokens": prot.mapping,
             "target": "",
+            'current_target': row.get('current_target', ''),
         }
         lines.append(json.dumps(obj, ensure_ascii=False))
         reg_rows.append(
@@ -108,7 +111,7 @@ def export_jsonl(
     prompt_path.write_text(prompt, encoding="utf-8")
 
     conn.execute(
-        """INSERT INTO exports (export_id, project_id, format, created_at,
+        """INSERT OR IGNORE INTO exports (export_id, project_id, format, created_at,
                                 unit_count)
            VALUES (?, ?, 'jsonl', ?, ?)""",
         (export_id, project_id, time.strftime("%Y-%m-%dT%H:%M:%S"), len(rows)),
@@ -119,6 +122,7 @@ def export_jsonl(
            VALUES (?, ?, ?, ?, ?)""",
         reg_rows,
     )
+    conn.execute('UPDATE exports SET unit_count=(SELECT COUNT(*) FROM export_units WHERE export_id=?) WHERE export_id=?', (export_id, export_id))
     conn.commit()
     return ExportResult(export_id, out_path, prompt_path, len(rows))
 
@@ -142,6 +146,9 @@ class ImportReport:
     rejected: list[RejectedUnit] = field(default_factory=list)
     fatal: str | None = None  # ошибка, блокирующая импорт целиком
     not_returned: int = 0     # строк экспорта, которых нет в файле
+    export_id: str = ''
+    warnings: list[str] = field(default_factory=list)
+    unit_exports: dict[str, list[str]] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
@@ -173,9 +180,12 @@ def import_jsonl(
         if not line:
             continue
         try:
-            objs.append(json.loads(line))
-        except json.JSONDecodeError as e:
-            report.fatal = f"строка {lineno}: некорректный JSON ({e.msg})"
+            obj = json.loads(line)
+            if not isinstance(obj, dict):
+                raise ValueError('Expected an object')
+            objs.append(obj)
+        except (json.JSONDecodeError, ValueError) as e:
+            report.fatal = f"строка {lineno}: некорректный JSON ({e})"
             return report
     if not objs:
         report.fatal = "файл пуст"
@@ -188,18 +198,24 @@ def import_jsonl(
         return report
 
     if export_id is None:
-        row = conn.execute(
-            """SELECT export_id FROM export_units WHERE unit_id=? AND key=?
-               ORDER BY rowid DESC LIMIT 1""",
+        declared = {str(o['export_id']) for o in objs if o.get('export_id')}
+        if len(declared) > 1:
+            report.fatal = 'Mixed export IDs in one file'
+            return report
+        candidates = conn.execute(
+            """SELECT DISTINCT export_id FROM export_units WHERE unit_id=? AND key=?""",
             (ids[0], str(objs[0].get("key", ""))),
-        ).fetchone()
-        if row is None:
+        ).fetchall()
+        if declared:
+            export_id = declared.pop()
+        elif len(candidates) != 1:
             report.fatal = (
-                "не найден экспорт, которому принадлежит файл — "
-                "импортируйте файл, созданный этим приложением"
+                'Export is unknown or ambiguous; select an explicit registered export ID'
             )
             return report
-        export_id = row["export_id"]
+        else:
+            export_id = candidates[0]['export_id']
+    report.export_id = export_id
 
     reg = {
         r["unit_id"]: r
@@ -229,13 +245,23 @@ def import_jsonl(
                              f"ключ изменён (был {entry['key']})")
             )
             continue
-        target_prot = str(obj.get("target", "") or "")
+        target_prot = obj.get('target', '')
+        if not isinstance(target_prot, str):
+            report.rejected.append(RejectedUnit(key, unit_id, 'Translation must be text'))
+            continue
         if not target_prot.strip():
             report.rejected.append(RejectedUnit(key, unit_id, "перевод пуст"))
             continue
         tokens = obj.get("tokens") or {}
         if not isinstance(tokens, dict):
             report.rejected.append(RejectedUnit(key, unit_id, "испорчено поле tokens"))
+            continue
+        expected = protect(entry['source_text'])
+        if obj.get('source') != expected.text or tokens != expected.mapping:
+            report.rejected.append(RejectedUnit(key, unit_id, 'Source or token mapping changed'))
+            continue
+        if obj.get('export_id', export_id) != export_id:
+            report.rejected.append(RejectedUnit(key, unit_id, 'Export ID changed'))
             continue
         # источник успел обновиться?
         current = current_source_values.get(key)

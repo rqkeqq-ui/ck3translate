@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import fnmatch
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -185,6 +186,13 @@ def scan_localization_tree(
         ):
             continue
         try:
+            stat = path.stat()
+            cache_key = (str(path), stat.st_size, stat.st_mtime_ns, rel_path, tuple(known))
+            cached = _FILE_CACHE.get(cache_key)
+            if cached is not None:
+                _FILE_CACHE.move_to_end(cache_key)
+                result.append(cached)
+                continue
             data = path.read_bytes()
         except OSError:
             continue
@@ -240,14 +248,32 @@ def scan_localization_tree(
                 raw_hash=hashlib.sha256(data).hexdigest()[:16],
             )
         )
+        _remember(cache_key, result[-1])
     return result
+
+
+# Разобранные файлы по (путь, размер, время изменения): повторное открытие
+# того же мода (карточка → перевод → проверка) не разбирает его заново.
+# Изменённый на диске файл получает новый ключ и разбирается снова.
+_FILE_CACHE: "OrderedDict[tuple, FileScan]" = OrderedDict()
+_FILE_CACHE_MAX_ENTRIES = 400_000
+_file_cache_entries = 0
+
+
+def _remember(key: tuple, scan: "FileScan") -> None:
+    global _file_cache_entries
+    _FILE_CACHE[key] = scan
+    _file_cache_entries += scan.entry_count + 1
+    while _file_cache_entries > _FILE_CACHE_MAX_ENTRIES and len(_FILE_CACHE) > 1:
+        _old_key, old = _FILE_CACHE.popitem(last=False)
+        _file_cache_entries -= old.entry_count + 1
 
 
 def scan_mod(
     mod_dir: Path,
     known_languages: list[str] | None = None,
     rule=None,
-    *, mod_id: str | None = None,
+    *, mod_id: str | None = None, owned_paths: set[str] | None = None,
 ) -> ModScan:
     mod_dir = Path(mod_dir)
     scan = ModScan(
@@ -261,6 +287,8 @@ def scan_mod(
         getattr(rule, "protected_key_prefixes", ())
     ) if rule else ()
     scan.files = scan_localization_tree(mod_dir, known_languages, excludes)
+    if owned_paths:
+        scan.files = [f for f in scan.files if str(f.path.resolve()) not in owned_paths]
     for fs in scan.files:
         for d in fs.diagnostics:
             scan.diagnostics.append((fs.rel_path, d))

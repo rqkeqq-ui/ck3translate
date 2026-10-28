@@ -34,6 +34,7 @@ class ModRow:
     source_lang: str = ""       # фактический источник с учётом Community rules
     # из чего складывается перевод: [(вид, количество)] для полоски
     segments: list = field(default_factory=list)
+    origins: dict = field(default_factory=dict)
 
 
 class ScanWorker(QThread):
@@ -99,11 +100,10 @@ class ScanWorker(QThread):
                 community = community_result.database
                 imported = import_community_glossary(conn, community)
                 self._community_translations = community.translations
-                self.note.emit(
-                    f"Community Database {community.database_version}: "
-                    f"глоссарий +{imported.added}/~{imported.updated}, "
-                    f"связей русификаторов {len(community.translations)}."
-                )
+                from ck3loc.core.community_db import describe_state
+                self.note.emit("Community Database: " + describe_state(
+                    community_result, source_lang=cfg.get("source_lang", "english"),
+                    target_lang=cfg.get("target_lang", "russian"), imported=imported))
             elif community_result.state == "incompatible" and community_result.database:
                 self.note.emit(
                     "Community Database требует версию приложения не ниже "
@@ -138,7 +138,8 @@ class ScanWorker(QThread):
                 if self._stop:
                     break
                 rule = community.mod_rules.get(mod_dir.mod_id) if community else None
-                scan = scan_mod(mod_dir.path, langs, rule=rule, mod_id=mod_dir.mod_id)
+                owned = {str(Path(r[0]).resolve()) for r in conn.execute('SELECT abs_path FROM generated_outputs')}
+                scan = scan_mod(mod_dir.path, langs, rule=rule, mod_id=mod_dir.mod_id, owned_paths=owned)
                 self.progress.emit(i, total, scan.name)
                 entry = acf.get(scan.mod_id)
                 t_upd = int(entry.time_updated) if entry and entry.time_updated else 0
@@ -179,7 +180,7 @@ class ScanWorker(QThread):
                                    cov, state, True, updated, errors,
                                    scan.mod_id in tracked, source_keys=of,
                                    updated_ts=t_upd, source_lang=src))
-            gone = mark_missing_mods(conn, {d.mod_id for d in mod_dirs}) if library.complete and not self._stop else []
+            gone = mark_missing_mods(conn, {d.mod_id for d in mod_dirs}, library.complete_roots) if not self._stop else []
             for g in gone:
                 self.note.emit(
                     f"Мод {g} больше не установлен — перевод и история "
@@ -289,6 +290,12 @@ class ScanWorker(QThread):
             )
         }
         for row in rows:
+            from ck3loc.core.provenance import counts
+            pid = conn.execute('SELECT id FROM translation_projects WHERE mod_id=? AND source_lang=? AND target_lang=?',
+                               (row.mod_id, row.source_lang or self.source_lang, self.target_lang)).fetchone()
+            if pid:
+                from ck3loc.core.store import get_units
+                row.origins = counts(get_units(conn, pid[0]))
             if not row.has_loc or row.translates:
                 continue
             needs_details = (
@@ -320,6 +327,11 @@ class ScanWorker(QThread):
                 row.state = tr_format("другой мод · {n} пропущено", n=b.missing)
             else:
                 row.state = tr_format("{n} пропущено", n=b.missing)
+            if pid:
+                from ck3loc.core.writer import verify_outputs
+                checks = verify_outputs(conn, pid[0])
+                if checks and any(c.state == 'missing' for c in checks):
+                    row.state += ' · ' + tr('Файлы перевода отсутствуют')
 
     def _report_changes(self, conn, scan, old_id: int, new_id: int):
         from ck3loc.core.store import diff_snapshots
@@ -346,13 +358,21 @@ class TranslateWorker(QThread):
     done = Signal(object)
 
     def __init__(self, mod_id: str, provider_name: str, what: str,
-                 source_lang: str, target_lang: str):
+                 source_lang: str, target_lang: str, *, keys=None, options=None,
+                 job_id=None, mod_dir=None, rows=None, provider_options=None):
         super().__init__()
         self.mod_id = mod_id
         self.provider_name = provider_name
         self.what = what
         self.source_lang = source_lang
         self.target_lang = target_lang
+        from ck3loc.core.jobs import CancellationToken
+        self.cancellation = CancellationToken()
+        self.keys, self.options, self.job_id = keys, options or {}, job_id
+        self.mod_dir, self.rows, self.provider_options = mod_dir, rows, provider_options or {}
+
+    def stop(self):
+        self.cancellation.cancel()
 
     def run(self):
         from ck3loc.core import db
@@ -363,25 +383,26 @@ class TranslateWorker(QThread):
 
         conn = db.connect()
         try:
-            seed_glossary(conn)
+            # Термины базы импортирует load_project_context (один раз за запуск).
             ctx = load_project_context(conn, self.mod_id, self.source_lang,
-                                       self.target_lang)
+                                       self.target_lang, mod_dir=self.mod_dir)
             if ctx is None:
                 self.line.emit("Мод не найден.")
                 self.done.emit(None)
                 return
-            rows = rows_to_translate(ctx, self.what)
+            rows = self.rows if self.rows is not None else rows_to_translate(ctx, self.what, self.keys)
             if not rows:
                 self.line.emit("Переводить нечего — всё актуально.")
                 self.done.emit(None)
                 return
-            provider = make_provider(self.provider_name)
+            provider = make_provider(self.provider_name, **self.provider_options)
             vl = build_vanilla_lookup(ctx.project["source_lang"],
                                       ctx.project["target_lang"])
             stats = translate_rows(
                 ctx, rows, provider,
                 progress_cb=lambda d, t: self.progress.emit(d, t),
                 vanilla_lookup=vl,
+                cancellation=self.cancellation, job_id=self.job_id, **self.options,
             )
             self.done.emit(stats)
         except Exception as e:  # noqa: BLE001
@@ -399,7 +420,7 @@ class BatchWorker(QThread):
     done = Signal()
 
     def __init__(self, provider_name: str, source_lang: str, target_lang: str,
-                 write_after: bool = True, limit: int = 0):
+                 write_after: bool = False, limit: int = 0):
         super().__init__()
         self.provider_name = provider_name
         self.source_lang = source_lang
@@ -407,9 +428,12 @@ class BatchWorker(QThread):
         self.write_after = write_after
         self.limit = limit
         self._stop = False
+        from ck3loc.core.jobs import CancellationToken
+        self.cancellation = CancellationToken()
 
     def stop(self):
         self._stop = True
+        self.cancellation.cancel()
 
     def run(self):
         from ck3loc.core import db, settings
@@ -454,8 +478,8 @@ class BatchWorker(QThread):
                     else scan.best_source_language(self.source_lang)
                     or self.source_lang
                 )
-                translated, of = scan.coverage(self.target_lang, src)
-                if of > 0 and translated == 0:
+                candidate = load_project_context(conn, mod_dir.mod_id, src, self.target_lang, mod_dir=mod_dir.path)
+                if candidate and rows_to_translate(candidate, 'missing'):
                     queue.append(mod_dir)
             if self.limit:
                 queue = queue[: self.limit]
@@ -477,20 +501,13 @@ class BatchWorker(QThread):
                 if pair not in vanilla_cache:
                     vanilla_cache[pair] = build_vanilla_lookup(*pair)
                 stats = translate_rows(
-                    ctx, rows, provider, vanilla_lookup=vanilla_cache[pair]
+                    ctx, rows, provider, vanilla_lookup=vanilla_cache[pair], cancellation=self.cancellation
                 )
                 self.line.emit(
                     f"     ваниль {stats.from_vanilla} · память {stats.from_memory} "
                     f"· API {stats.from_api} · ошибок {len(stats.failed)}"
                 )
-                if self.write_after:
-                    ctx = load_project_context(conn, mod_dir.mod_id, self.source_lang,
-                                               self.target_lang, mod_dir=mod_dir.path)
-                    plan = build_write_plan(ctx.scan, ctx.project, ctx.units)
-                    if plan.total_keys:
-                        apply_write_plan(conn, ctx.project_id, plan, ctx.scan,
-                                         ctx.units)
-                        self.line.emit(f"     записано ключей: {plan.total_keys}")
+                self.line.emit(f'Черновик: {stats.job_id} · {stats.state}')
             self.done.emit()
         except Exception as e:  # noqa: BLE001
             self.line.emit(f"Ошибка: {e}")

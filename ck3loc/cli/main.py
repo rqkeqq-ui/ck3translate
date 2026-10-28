@@ -306,15 +306,14 @@ def cmd_write(args: argparse.Namespace) -> int:
         print(f"Мод {args.mod_id} не найден.")
         return 1
     if args.mode and args.mode != ctx.project["write_mode"]:
-        from ck3loc.core.writer import remove_outputs
-
-        removed = remove_outputs(conn, ctx.project_id, args.mod_id)
-        if removed:
-            print(f"Режим записи изменён: удалено файлов прежнего режима "
-                  f"{len(removed)} (резервные копии сохранены).")
-        set_project_option(conn, ctx.project_id, "write_mode", args.mode)
-        ctx = load_project_context(conn, args.mod_id, args.source, args.target)
+        if args.dry_run:
+            ctx.project['write_mode'] = args.mode
+        else:
+            print('Change the write mode in the desktop application after reviewing owned files.')
+            return 1
     plan = build_write_plan(ctx.scan, ctx.project, ctx.units, args.build)
+    from ck3loc.core.writer import prepare_write_plan
+    prepare_write_plan(conn, ctx.project_id, plan)
     print(f"Режим записи: {plan.write_mode}, сборка: {plan.build_mode}")
     print(f"Файлов будет записано: {len(plan.files)}, ключей: {plan.total_keys}")
     for f in plan.files:
@@ -327,7 +326,7 @@ def cmd_write(args: argparse.Namespace) -> int:
     if args.dry_run:
         print("Пробный прогон — на диск ничего не записано.")
         return 0
-    if plan.total_keys == 0:
+    if plan.total_keys == 0 and not plan.delete_paths:
         print("Записывать нечего.")
         return 0
     result = apply_write_plan(conn, ctx.project_id, plan, ctx.scan, ctx.units)
@@ -562,10 +561,14 @@ def build_parser() -> argparse.ArgumentParser:
     pk.add_argument("provider")
     pk.set_defaults(func=cmd_key)
 
+    def _provider_names():
+        from ck3loc.providers.registry import PROVIDERS
+        return list(PROVIDERS)
+
     pt = sub.add_parser("translate", help="перевести мод встроенным провайдером")
     pt.add_argument("mod_id")
     pt.add_argument("--provider", default="google",
-                    choices=["google", "yandex", "deepl", "claude", "openai"])
+                    choices=_provider_names())
     pt.add_argument("--what",
                     choices=["missing", "stale", "outdated", "all"],
                     default="outdated")
@@ -576,16 +579,22 @@ def build_parser() -> argparse.ArgumentParser:
 
     pb = sub.add_parser("batch", help="перевести и записать все моды без целевого языка")
     pb.add_argument("--provider", default="google",
-                    choices=["google", "yandex", "deepl", "claude", "openai"])
+                    choices=_provider_names())
     pb.add_argument("--limit", type=int, help="не больше N модов")
     _langs(pb)
     pb.set_defaults(func=cmd_batch)
+    from .release_commands import register
+    register(sub)
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    return args.func(args)
+    try:
+        return args.func(args)
+    except (ValueError, OSError, RuntimeError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":

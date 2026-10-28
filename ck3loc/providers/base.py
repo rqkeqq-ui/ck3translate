@@ -13,12 +13,20 @@ class ProviderError(RuntimeError):
     """Понятная пользователю ошибка провайдера."""
 
 
+class ProviderPaused(ProviderError):
+    """Stop the whole job on account, quota, permission or connection failure."""
+
+
 @dataclass
 class ProviderInfo:
     name: str
     title: str
     needs_key: bool
     wave: int  # 1 — классический МП, 2 — LLM
+
+    @property
+    def origin_kind(self) -> str:
+        return 'llm' if self.wave == 2 else 'service'
 
 
 class TranslationProvider:

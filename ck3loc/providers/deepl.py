@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ck3loc.core import net
+
 from .base import ProviderError, ProviderInfo, TranslationProvider, lang_code
 
 
@@ -18,7 +20,7 @@ class DeepLProvider(TranslationProvider):
         host = ("api-free.deepl.com" if self.api_key.endswith(":fx")
                 else "api.deepl.com")
         try:
-            resp = httpx.post(
+            resp = net.post(
                 f"https://{host}/v2/translate",
                 headers={"Authorization": f"DeepL-Auth-Key {self.api_key}"},
                 json={

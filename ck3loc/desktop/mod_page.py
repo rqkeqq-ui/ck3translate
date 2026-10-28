@@ -10,6 +10,7 @@ from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtGui import QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QComboBox,
+    QAbstractItemView,
     QDialog,
     QFileDialog,
     QHBoxLayout,
@@ -79,6 +80,8 @@ class ModPage(QWidget):
         self.mod_id = ""
         self._mod_dir: Path | None = None
         self._shown_rows = []
+        self._editor_row_key = None
+        self.setAcceptDrops(True)
         self._cover_workers: set = set()
 
         root = QVBoxLayout(self)
@@ -204,8 +207,17 @@ class ModPage(QWidget):
         b_imp.setToolTip("Принять переведённый файл с проверкой каждой строки")
         b_imp.clicked.connect(self.do_import)
         row1.addWidget(b_imp)
+        history_row = QHBoxLayout()
+        history = QPushButton("История действий")
+        history.clicked.connect(self.show_history)
+        history_row.addWidget(history)
+        remove = QPushButton("Убрать перевод сервисов…")
+        remove.clicked.connect(self.remove_services)
+        history_row.addWidget(remove)
+        history_row.addStretch(1)
         row1.addStretch(1)
         actions.add_layout(row1)
+        actions.add_layout(history_row)
         v.addWidget(actions)
 
         # действия: запись
@@ -225,6 +237,14 @@ class ModPage(QWidget):
         )
         b_ver.clicked.connect(self.do_verify)
         row2.addWidget(b_ver)
+        # Удалённые файлы перевода не пересоздаются сами: только по нажатию.
+        self.btn_restore = QPushButton("Восстановить перевод")
+        self.btn_restore.setToolTip(
+            "Записать сохранённый в базе перевод заново — с предпросмотром файлов"
+        )
+        self.btn_restore.clicked.connect(self.do_write)
+        self.btn_restore.hide()
+        row2.addWidget(self.btn_restore)
         row2.addSpacing(14)
         lab = QLabel("Куда писать:")
         lab.setProperty("role", "dim")
@@ -246,9 +266,17 @@ class ModPage(QWidget):
             "Здесь появятся сообщения о выгрузке, загрузке, переводе и записи."
         )
         self.log.setFont(mono_font(11))
+        self.log.setMinimumHeight(140)
         log_card.add(self.log, stretch=1)
         v.addWidget(log_card, stretch=1)
-        return w
+        # Без прокрутки Qt сжимает блоки ниже минимума при невысоком окне,
+        # и обложка налезает на текст под ней.
+        from PySide6.QtWidgets import QFrame, QScrollArea
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidget(w)
+        return scroll
 
     # ---------- вкладка «Строки» ----------
 
@@ -273,13 +301,28 @@ class ModPage(QWidget):
         self.rows_count = QLabel()
         self.rows_count.setProperty("role", "dim")
         top.addWidget(self.rows_count)
+        self.origin_filter = QComboBox()
+        for kind in ('', 'llm', 'service', 'manual', 'vanilla', 'native', 'external_mod', 'unknown'):
+            self.origin_filter.addItem(tr('Все источники') if not kind else tr(kind), kind)
+        self.origin_filter.currentIndexChanged.connect(self.refresh_rows)
+        top.addWidget(self.origin_filter)
         v.addLayout(top)
+        selected = QHBoxLayout()
+        self.selected_count = QLabel()
+        selected.addWidget(self.selected_count)
+        export = QPushButton('Выгрузить выбранные…')
+        export.clicked.connect(lambda: self.do_export(selected=True))
+        selected.addWidget(export)
+        translate = QPushButton('Перевести выбранные…')
+        translate.clicked.connect(self.translate_selected)
+        selected.addWidget(translate)
+        v.addLayout(selected)
 
         splitter = QSplitter(Qt.Orientation.Vertical)
 
-        self.rows_table = QTableWidget(0, 4)
+        self.rows_table = QTableWidget(0, 5)
         self.rows_table.setHorizontalHeaderLabels(
-            ["Статус", "Ключ", "Источник", "Перевод"]
+            ["Статус", "Ключ", "Источник", "Перевод", "Источник перевода"]
         )
         h = self.rows_table.horizontalHeader()
         h.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
@@ -289,7 +332,9 @@ class ModPage(QWidget):
         self.rows_table.setColumnWidth(0, 150)
         self.rows_table.setColumnWidth(1, 250)
         setup_table(self.rows_table, row_height=28)
-        self.rows_table.itemSelectionChanged.connect(self._load_editor)
+        self.rows_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.rows_table.currentCellChanged.connect(lambda *_: self._load_editor())
+        self.rows_table.itemSelectionChanged.connect(self._selection_changed)
         align_headers(self.rows_table, left_columns=(0, 1, 2, 3))
         splitter.addWidget(self.rows_table)
 
@@ -455,7 +500,14 @@ class ModPage(QWidget):
     def refresh(self):
         ctx = self.ctx
         if ctx is None:
+            self.title.setText(tr('Мод больше не установлен. Переводы сохранены в базе.'))
+            self.btn_write.setEnabled(False)
+            self.btn_api.setEnabled(False)
+            self.btn_restore.hide()
+            self.rows_table.setRowCount(0)
             return
+        self.btn_write.setEnabled(True)
+        self.btn_api.setEnabled(True)
         scan = ctx.scan
         d = scan.descriptor
         self.title.setText(scan.name)
@@ -502,6 +554,27 @@ class ModPage(QWidget):
         )
         self.status_chips.setText(chips)
         self.status_chips.setVisible(bool(chips))
+        from ck3loc.core.provenance import counts as origin_counts
+        origins = origin_counts(ctx.units, set(ctx.source_values))
+        kinds = ('llm', 'service', 'manual', 'vanilla', 'native', 'external_mod', 'unknown')
+        origin_text = ' · '.join(f'{tr(kind)} {origins[kind]}' for kind in kinds if origins.get(kind))
+        if sum(bool(origins.get(kind)) for kind in kinds) > 1:
+            origin_text = tr('Смешанный перевод') + ' · ' + origin_text
+        if origin_text:
+            origin_text += ' · ' + tr_format('проверено {n}', n=origins.get('reviewed', 0))
+            if origins.get('unreviewed_service'):
+                origin_text += ' · ' + tr_format('непроверенных переводов сервисов {n}',
+                                                 n=origins['unreviewed_service'])
+        if origin_text:
+            self.status_chips.setText(chips + '<br>' + origin_text)
+            self.status_chips.show()
+        checks = verify_outputs(self.conn, ctx.project_id)
+        files_missing = bool(checks) and any(check.state == 'missing' for check in checks)
+        if files_missing:
+            saved = format_percent(translated, of) if of else '—'
+            self.coverage_caption.setText(self.coverage_caption.text() + ' · ' + tr_format(
+                'В базе сохранено {percent}; файлы перевода отсутствуют', percent=saved))
+        self.btn_restore.setVisible(files_missing)
         self.info.setText(
             f"<span style='color:{c['text_dim']}'>ID {scan.mod_id}  ·  "
             f"{tr('версия автора')} {d.version or '—'}  ·  "
@@ -699,7 +772,13 @@ class ModPage(QWidget):
         want = ROW_FILTERS[self.row_filter.currentData()]
         query = self.row_search.text().strip().lower()
         shown = []
+        from ck3loc.core.provenance import origin_kind
+        origin = self.origin_filter.currentData()
         for r in self.ctx.rows:
+            unit = dict(self.ctx.units.get(r.key) or {})
+            kind = unit.get('origin_kind') or ('native' if r.status == 'native' else 'external_mod' if r.status == 'external' else 'unknown')
+            if origin and kind != origin:
+                continue
             if want is not None and r.status not in want:
                 continue
             if query and query not in r.key.lower() and \
@@ -709,6 +788,8 @@ class ModPage(QWidget):
             shown.append(r)
         self._shown_rows = shown
         self.rows_count.setText(tr_format("показано {shown} из {total}", shown=len(shown), total=len(self.ctx.rows)))
+        self.rows_table.blockSignals(True)
+        self.rows_table.clearSelection()
         self.rows_table.setRowCount(len(shown))
         for i, r in enumerate(shown):
             st = QTableWidgetItem(status_label(r.status))
@@ -724,6 +805,15 @@ class ModPage(QWidget):
                 item.setForeground(QColor(palette(self.theme)["warn"]))
                 item.setToolTip("Перевод совпадает с оригиналом — проверьте")
             self.rows_table.setItem(i, 3, item)
+            unit = dict(self.ctx.units.get(r.key) or {})
+            kind = unit.get('origin_kind') or ('native' if r.status == 'native' else 'external_mod' if r.status == 'external' else 'unknown')
+            text = tr(kind) + (' · ' + unit['provider'] if unit.get('provider') else '')
+            if unit.get('method') == 'memory':
+                text += ' · ' + tr('из памяти')
+            self.rows_table.setItem(i, 4, QTableWidgetItem(text))
+        self.rows_table.blockSignals(False)
+        self._selection_changed()
+        self._load_editor()
         self.tabs.setTabText(1, f"{tr('Строки')} ({len(self.ctx.rows)})")
 
     # ---------- редактор ----------
@@ -736,7 +826,10 @@ class ModPage(QWidget):
 
     def _load_editor(self):
         row = self._current_row()
+        self._editor_row_key = row.key if row else None
         if row is None:
+            self.btn_save.setEnabled(False)
+            self.btn_save_next.setEnabled(False)
             return
         self.editor_key.setText(row.key)
         self.editor_status.setText(
@@ -789,7 +882,7 @@ class ModPage(QWidget):
 
     def save_current_row(self, next_row: bool = False):
         row = self._current_row()
-        if row is None or row.source_text is None:
+        if row is None or row.source_text is None or row.key != self._editor_row_key:
             return
         text = self.col_target["text"].toPlainText().strip()
         if not text:
@@ -849,87 +942,151 @@ class ModPage(QWidget):
         self._log("Режим записи изменён: "
                   + ("внутрь мода" if mode == "in_mod" else "отдельный патч-мод"))
 
-    def do_export(self):
-        from ck3loc.core.bundle import export_jsonl
-        from ck3loc.core.glossary_seed import load_glossary
-        from ck3loc.core.ops import counts_by_scope
-        from ck3loc.core.xliff import export_xliff
-        from ck3loc.desktop.export_dialog import ExportScopeDialog
+    def selected_keys(self):
+        return {self._shown_rows[i.row()].key for i in self.rows_table.selectionModel().selectedRows()
+                if i.row() < len(self._shown_rows)}
 
-        counts = counts_by_scope(self.ctx)
-        if not any(counts.values()):
-            QMessageBox.information(self, "Выгрузка",
-                                    "Переводить нечего — всё актуально.")
+    def _selection_changed(self):
+        self.selected_count.setText(tr_format('Выбрано строк: {n}', n=len(self.selected_keys())))
+
+    def translate_selected(self):
+        from ck3loc.desktop.translate_dialog import TranslateDialog
+        if not self.selected_keys():
             return
-        dlg = ExportScopeDialog(counts, parent=self)
+        dialog = TranslateDialog(self.mod_id, '', self, ctx=self.ctx,
+                                 keys=self.selected_keys(), what='selected')
+        dialog.exec()
+        self.reload()
+
+    def do_export(self, selected=False):
+        from ck3loc.core.exchange import plan_export, write_export
+        from ck3loc.core.ops import counts_by_scope
+        from ck3loc.desktop.export_dialog import ExportScopeDialog
+        keys = self.selected_keys()
+        counts = counts_by_scope(self.ctx)
+        counts['selected'] = len(keys & set(self.ctx.source_values))
+        dlg = ExportScopeDialog(counts, parent=self, ctx=self.ctx, keys=keys)
+        if selected:
+            for radio, what in dlg.options:
+                if what == 'selected':
+                    radio.setChecked(True)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
-        scope, fmt = dlg.scope(), dlg.format()
-        rows = rows_to_translate(self.ctx, scope)
-        if not rows:
+        directory = QFileDialog.getExistingDirectory(self, tr('Куда сохранить архивы задания'))
+        if not directory:
             return
-        target = self.ctx.project["target_lang"]
-        ext = "xliff" if fmt == "xliff" else "jsonl"
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Сохранить файл-задание",
-            f"{self.mod_id}_{target}_{scope}.{ext}",
-            f"Файл задания (*.{ext})",
-        )
-        if not path:
-            return
-        if fmt == "xliff":
-            res = export_xliff(
-                self.conn, self.ctx.project_id, rows, Path(path),
-                self.ctx.project["source_lang"], target,
-            )
-            self._log(f"Выгружено строк: {res.unit_count}\n  файл: {res.path}")
-        else:
-            res = export_jsonl(
-                self.conn, self.ctx.project_id, rows, Path(path),
-                self.ctx.project["source_lang"], target,
-                glossary=load_glossary(
-                    self.conn,
-                    self.mod_id,
-                    self.ctx.project["source_lang"],
-                    self.ctx.project["target_lang"],
-                )[:60],
-            )
-            self._log(
-                f"Выгружено строк: {res.unit_count}\n"
-                f"  задание: {res.path}\n"
-                f"  инструкция для нейросети: {res.prompt_path}\n"
-                f"Отдайте оба файла нейросети, затем нажмите «Загрузить перевод "
-                f"из файла». Можно возвращать перевод частями."
-            )
-        self.note.emit(f"«{self.ctx.scan.name}»: выгружено {res.unit_count} строк")
+        from ck3loc.core.exchange import package_name
+        from ck3loc.desktop.tasks import ConfirmDialog, run_with_progress
+        scope, fmt, split = dlg.scope(), dlg.format(), dlg.split_kwargs()
+        mod_id, mod_dir = self.mod_id, self.ctx.scan.mod_dir
+        source_lang, target_lang = self.ctx.project['source_lang'], self.ctx.project['target_lang']
+        name = package_name(self.ctx.scan.name, target_lang)
 
-    def do_import(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Открыть переведённый файл", "",
-            "Переводы (*.jsonl *.xliff *.xlf);;Все файлы (*)",
-        )
-        if not path:
+        def work(conn, report, token):
+            # Своё соединение в фоне: окно не замирает на больших модах.
+            from ck3loc.core.exchange import write_package
+            from ck3loc.core.ops import load_project_context, rows_to_translate
+            ctx = load_project_context(conn, mod_id, source_lang, target_lang, mod_dir=mod_dir)
+            if ctx is None:
+                raise ValueError(tr('Мод больше не установлен. Переводы сохранены в базе.'))
+            return write_package([(ctx, rows_to_translate(ctx, scope, keys))], Path(directory), fmt,
+                                 name=name, **split)
+
+        result, error = run_with_progress(self, tr('Выгружаю задание…'), work)
+        if error:
+            QMessageBox.warning(self, tr('Выгрузка'), error)
             return
-        p = Path(path)
-        report = (import_xliff(self.conn, p, self.ctx.source_values)
-                  if p.suffix.lower() in (".xliff", ".xlf")
-                  else import_jsonl(self.conn, p, self.ctx.source_values))
-        if not report.ok:
-            QMessageBox.warning(self, "Загрузка остановлена", report.fatal)
-            self._log(f"Загрузка остановлена: {report.fatal}")
+        self._log(tr_format('Выгружено строк: {n} в {parts} ZIP-архив(ов). Промпт: {prompt}',
+                            n=result.rows, parts=len(result.archives), prompt=result.prompt))
+        details = '\n'.join(f'{p.name} — {size}' for p, size in zip(result.archives, result.sizes))
+        if ConfirmDialog.ask(self, 'Выгрузка', tr_format(
+                'Готово. Отправьте нейросети архивы и текст из файла {prompt}. '
+                'Ответ загрузите кнопкой «Загрузить перевод из файла…» — можно выбрать сразу все ZIP.',
+                prompt=result.prompt.name), details + '\n' + str(result.prompt),
+                ok_text='Открыть папку', cancel_text='Закрыть'):
+            from PySide6.QtCore import QUrl
+            from PySide6.QtGui import QDesktopServices
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(result.prompt.parent)))
+
+    def do_import(self, paths=None):
+        from ck3loc.core.exchange import import_files, stage_import, export_progress
+        from ck3loc.core.jobs import preview_job, apply_job
+        from ck3loc.desktop.review_dialog import ReviewDialog
+        if not paths:
+            paths, _ = QFileDialog.getOpenFileNames(self, tr('Открыть переведённый файл'), '',
+                                                  'Translations (*.zip *.jsonl *.xliff *.xlf *.yml)')
+        if not paths:
             return
-        n = apply_import_report(self.ctx, report)
-        self._log(f"Принято строк: {n}, отклонено: {len(report.rejected)}")
-        if report.not_returned:
-            self._log(
-                f"   Не вернулось из задания: {report.not_returned} — "
-                f"они остались в работе, можно догрузить следующим файлом."
-            )
-        for r in report.rejected[:15]:
-            self._log(f"   ✗ {r.key}: {r.reason}")
-        self.note.emit(
-            f"«{self.ctx.scan.name}»: принято {n}, отклонено {len(report.rejected)}"
-        )
+        self.reload()
+        import tempfile
+        from ck3loc.core.exchange import expand_archives
+        with tempfile.TemporaryDirectory(prefix='ck3loc_import_') as temporary:
+            files, unpack_errors = expand_archives([Path(p) for p in paths], Path(temporary))
+            for error in unpack_errors:
+                self._log(error)
+            report = import_files(self.ctx, files)
+        for warning in report.warnings:
+            self._log(tr(warning))
+        for row in report.rejected:
+            self._log(f'{row.key}: {tr(row.reason)}')
+        if report.fatal or not report.accepted:
+            QMessageBox.warning(self, tr('Загрузка остановлена'), tr(report.fatal) if report.fatal
+                                else '\n'.join(map(tr, report.warnings)) or tr('Нет принятых строк'))
+            return
+        job_id = stage_import(self.ctx, report)
+        preview = preview_job(self.ctx, job_id)
+        if all(row.change == 'unchanged' for row in preview):
+            self._log(tr('Изменений нет: все строки из файла уже применены.'))
+            self.reload()
+            return
+        dialog = ReviewDialog(preview, parent=self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            result = apply_job(self.ctx, job_id, dialog.selected_keys())
+            self._log(tr_format('Применено строк: {n}; конфликтов: {conflicts}. Игровые файлы обновляются кнопкой «Записать перевод в игру».',
+                                n=len(result.changed), conflicts=len(result.conflicts)))
+        from ck3loc.core.exchange import package_progress
+        exported = {e for ids in report.unit_exports.values() for e in ids}
+        for _package, received, total, missing in package_progress(self.conn, exported):
+            self._log(tr_format('Получено архивов: {received} из {total}; не вернулось строк: {missing}',
+                                received=received, total=total, missing=missing))
+        self.reload()
+
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+
+    def dropEvent(self, event):
+        paths = [Path(u.toLocalFile()) for u in event.mimeData().urls() if u.isLocalFile()]
+        if paths:
+            self.do_import(paths)
+            event.acceptProposedAction()
+
+    def show_history(self):
+        from ck3loc.desktop.history_dialog import HistoryDialog
+        HistoryDialog(self.ctx, self).exec()
+        self.reload()
+
+    def remove_services(self):
+        from ck3loc.core.jobs import preview_service_removal, remove_service_translations, unit_value
+        from ck3loc.desktop.review_dialog import ReviewDialog
+        self.reload()
+        rows = preview_service_removal(self.ctx)
+        baseline = {k: unit_value(u) for k, u in self.ctx.units.items()}
+        providers = {k: dict(u).get('provider', '') for k, u in self.ctx.units.items()}
+        dialog = ReviewDialog(rows, 'Убрать перевод сервисов…', default_changes=(), providers=providers,
+                              allow_game_files=bool(verify_outputs(self.conn, self.ctx.project_id)),
+                              action_label='Убрать {n} выбранных строк', parent=self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            update_files = dialog.update_files.isChecked()
+            result = remove_service_translations(self.ctx, {k: baseline[k] for k in dialog.selected_keys()},
+                                                 update_game_files=update_files)
+            text = tr_format('Убрано непроверенных переводов сервисов: {n}; остальные сохранены. '
+                             'Пропущено изменённых или защищённых строк: {conflicts}.',
+                             n=len(result.changed), conflicts=len(result.conflicts))
+            if not update_files:
+                text += ' ' + tr('В базе убрано; в игре останется до следующей записи.')
+            self._log(text)
+            self.note.emit(f'«{self.ctx.scan.name}»: {text}')
         self.reload()
 
     def do_write(self):
@@ -937,25 +1094,30 @@ class ModPage(QWidget):
             self.ctx.scan, self.ctx.project, self.ctx.units,
             has_external_provider=self.ctx.provider is not None,
         )
-        if plan.total_keys == 0:
+        from ck3loc.core.writer import prepare_write_plan
+        try:
+            prepare_write_plan(self.conn, self.ctx.project_id, plan)
+        except ValueError as exc:
+            QMessageBox.warning(self, tr('Запись'), str(exc))
+            return
+        if plan.total_keys == 0 and not plan.delete_paths:
             QMessageBox.information(
                 self, "Запись",
                 "Записывать нечего: готовых переводов пока нет.\n"
                 "Сначала переведите строки любым способом.",
             )
             return
-        files = "\n".join(f"   {f.abs_path}" for f in plan.files[:12])
-        more = ("\n   …" if len(plan.files) > 12 else "")
-        skipped = (f"\n\nПропущено строк: {len(plan.skipped_keys)} "
-                   f"(повреждённые коды и осиротевшие)"
-                   if plan.skipped_keys else "")
-        answer = QMessageBox.question(
-            self, "Записать перевод?",
-            f"Режим: {'внутрь мода' if plan.write_mode == 'in_mod' else 'патч-мод'}"
-            f", сборка: {plan.build_mode}.\nКлючей: {plan.total_keys}.\n\n"
-            f"Файлы:\n{files}{more}{skipped}\n\nПродолжить?",
-        )
-        if answer != QMessageBox.StandardButton.Yes:
+        from ck3loc.desktop.tasks import ConfirmDialog
+        files = "\n".join(str(f.abs_path) for f in plan.files) + "".join(f"\n− {p}" for p in plan.delete_paths)
+        summary = tr_format('Режим: {mode}, сборка: {build}. Ключей: {keys}; файлов: {files}. '
+                            'Файлы автора мода не меняются; заменяемые файлы сохраняются в резервную копию.',
+                            mode=tr('внутрь мода') if plan.write_mode == 'in_mod' else tr('патч-мод'),
+                            build=plan.build_mode, keys=plan.total_keys,
+                            files=len(plan.files) + len(plan.delete_paths))
+        if plan.skipped_keys:
+            summary += '\n' + tr_format('Пропущено строк (повреждённые коды и осиротевшие): {n}',
+                                         n=len(plan.skipped_keys))
+        if not ConfirmDialog.ask(self, 'Записать перевод?', summary, files, ok_text='Записать'):
             return
         result = apply_write_plan(self.conn, self.ctx.project_id, plan,
                                   self.ctx.scan, self.ctx.units)
@@ -989,12 +1151,8 @@ class ModPage(QWidget):
             f"Восстановить перевод из базы?",
         )
         if answer == QMessageBox.StandardButton.Yes:
-            plan = build_write_plan(self.ctx.scan, self.ctx.project, self.ctx.units)
-            apply_write_plan(self.conn, self.ctx.project_id, plan,
-                             self.ctx.scan, self.ctx.units)
-            self._log(f"Восстановлено из базы: {plan.total_keys} строк.")
-            self.note.emit(f"«{self.ctx.scan.name}»: перевод восстановлен")
-            self.reload()
+            self.do_write()
+            return
 
     # ---------- внешние ссылки и обложка ----------
 

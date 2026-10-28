@@ -78,7 +78,7 @@ def set_language(code: str) -> None:
     global _current, _table
     _current = code if code in UI_LANGUAGES else DEFAULT_UI_LANG
     if _current == DEFAULT_UI_LANG:
-        _table = {}   # русский — исходный текст, словарь не нужен
+        _table = _load_table('ru')  # Also localize structured core diagnostic codes.
         return
     _table = _load_table("en") if _current != "en" else {}
     _table.update(_load_table(_current))

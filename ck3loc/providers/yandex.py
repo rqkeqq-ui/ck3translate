@@ -6,6 +6,8 @@
 
 from __future__ import annotations
 
+from ck3loc.core import net
+
 from .base import ProviderError, ProviderInfo, TranslationProvider, lang_code
 
 _URL = "https://translate.api.cloud.yandex.net/translate/v2/translate"
@@ -31,7 +33,7 @@ class YandexProvider(TranslationProvider):
         if folder:
             body["folderId"] = folder
         try:
-            resp = httpx.post(
+            resp = net.post(
                 _URL,
                 headers={"Authorization": f"Api-Key {self.api_key}"},
                 json=body,

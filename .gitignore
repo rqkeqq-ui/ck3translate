@@ -13,6 +13,7 @@ tests/fixtures/real/
 # Local planning, personal launchers and generated artifacts
 /*-PROMPT.md
 /AGENTS.md
+/CLAUDE.md
 /CK3-Localization-Manager-Spec.md
 /Start *.bat
 .env

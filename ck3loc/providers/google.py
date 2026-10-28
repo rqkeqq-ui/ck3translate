@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ck3loc.core import net
+
 from .base import ProviderError, ProviderInfo, TranslationProvider, lang_code
 
 _URL = "https://translation.googleapis.com/language/translate/v2"
@@ -18,7 +20,7 @@ class GoogleProvider(TranslationProvider):
         if not self.api_key:
             raise ProviderError("Не задан API-ключ Google. Настройки → ключи.")
         try:
-            resp = httpx.post(
+            resp = net.post(
                 _URL,
                 params={"key": self.api_key},
                 json={

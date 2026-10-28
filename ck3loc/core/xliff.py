@@ -44,8 +44,9 @@ def export_xliff(
     out_path: Path,
     source_lang: str,
     target_lang: str,
+    *, export_id: str | None = None, offset: int = 0,
 ) -> XliffExportResult:
-    export_id = uuid.uuid4().hex[:12]
+    export_id = export_id or uuid.uuid4().hex
     ET.register_namespace("", NS)
     root = ET.Element(
         f"{{{NS}}}xliff",
@@ -57,7 +58,7 @@ def export_xliff(
     )
     file_el = ET.SubElement(root, f"{{{NS}}}file", {"id": export_id})
     reg_rows = []
-    for i, row in enumerate(rows, start=1):
+    for i, row in enumerate(rows, start=1 + offset):
         unit_id = f"u{i:04d}"
         prot = protect(row["source"])
         unit = ET.SubElement(
@@ -66,6 +67,7 @@ def export_xliff(
         notes = ET.SubElement(unit, f"{{{NS}}}notes")
         note = ET.SubElement(notes, f"{{{NS}}}note", {"category": "tokens"})
         note.text = json.dumps(prot.mapping, ensure_ascii=False)
+        ET.SubElement(notes, f'{{{NS}}}note', {'category': 'current_target'}).text = row.get('current_target', '')
         seg = ET.SubElement(unit, f"{{{NS}}}segment", {"state": "initial"})
         src = ET.SubElement(seg, f"{{{NS}}}source")
         src.text = prot.text
@@ -79,7 +81,7 @@ def export_xliff(
     ET.ElementTree(root).write(out_path, encoding="utf-8", xml_declaration=True)
 
     conn.execute(
-        """INSERT INTO exports (export_id, project_id, format, created_at,
+        """INSERT OR IGNORE INTO exports (export_id, project_id, format, created_at,
                                 unit_count)
            VALUES (?, ?, 'xliff', ?, ?)""",
         (export_id, project_id, time.strftime("%Y-%m-%dT%H:%M:%S"), len(rows)),
@@ -90,6 +92,7 @@ def export_xliff(
            VALUES (?, ?, ?, ?, ?)""",
         reg_rows,
     )
+    conn.execute('UPDATE exports SET unit_count=(SELECT COUNT(*) FROM export_units WHERE export_id=?) WHERE export_id=?', (export_id, export_id))
     conn.commit()
     return XliffExportResult(export_id, out_path, len(rows))
 
@@ -109,6 +112,7 @@ def import_xliff(
         report.fatal = "в XLIFF нет элемента file"
         return report
     export_id = file_el.get("id", "")
+    report.export_id = export_id
     reg = {
         r["unit_id"]: r
         for r in conn.execute(
@@ -119,10 +123,20 @@ def import_xliff(
         report.fatal = f"экспорт {export_id} не найден в базе"
         return report
 
+    project = conn.execute('''SELECT p.source_lang,p.target_lang FROM exports e
+        JOIN translation_projects p ON p.id=e.project_id WHERE e.export_id=?''', (export_id,)).fetchone()
+    if project and (root.get('srcLang') != lang_code(project['source_lang'])
+                    or root.get('trgLang') != lang_code(project['target_lang'])):
+        report.fatal = 'Wrong localization language'
+        return report
+
     seen: set[str] = set()
     for unit in file_el.findall(f"{{{NS}}}unit"):
         unit_id = unit.get("id", "")
         key = unit.get("name", "")
+        if unit_id in seen:
+            report.fatal = 'Duplicate XLIFF unit ID'
+            return report
         seen.add(unit_id)
         entry = reg.get(unit_id)
         if entry is None or key != entry["key"]:
@@ -140,6 +154,11 @@ def import_xliff(
         seg = unit.find(f"{{{NS}}}segment")
         tgt = seg.find(f"{{{NS}}}target") if seg is not None else None
         target_prot = (tgt.text or "") if tgt is not None else ""
+        expected = protect(entry['source_text'])
+        source = seg.find(f'{{{NS}}}source') if seg is not None else None
+        if source is None or source.text != expected.text or tokens != expected.mapping:
+            report.rejected.append(RejectedUnit(key, unit_id, 'Source or token mapping changed'))
+            continue
         if not target_prot.strip():
             report.rejected.append(RejectedUnit(key, unit_id, "перевод пуст"))
             continue

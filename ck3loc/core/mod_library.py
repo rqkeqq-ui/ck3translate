@@ -59,6 +59,7 @@ class LibraryResult:
     mods: list[InstalledMod] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     complete: bool = True
+    complete_roots: list[Path] = field(default_factory=list)
 
 
 def discover_mods(steam_path: Path | None = None, local_path: Path | None = None) -> LibraryResult:
@@ -70,8 +71,9 @@ def discover_mods(steam_path: Path | None = None, local_path: Path | None = None
             key = path_key(path)
             if key in seen:
                 return
+            path.stat()
             if not path.is_dir():
-                raise OSError("Mod directory does not exist")
+                raise FileNotFoundError('Mod directory does not exist')
             # Exclude data-only databases and our generated translation patches.
             if (path / "ck3loc-database.json").is_file():
                 return
@@ -83,6 +85,8 @@ def discover_mods(steam_path: Path | None = None, local_path: Path | None = None
             seen.add(key)
             mod_id = path.name if source == "workshop" else "local_" + hashlib.sha256(key.encode("utf-8")).hexdigest()
             result.mods.append(InstalledMod(mod_id, path.resolve(), source))
+        except FileNotFoundError as exc:
+            result.warnings.append(f'{path}: {exc}')
         except (OSError, ValueError, RuntimeError) as exc:
             result.complete = False
             result.warnings.append(f"{path}: {exc}")
@@ -94,6 +98,8 @@ def discover_mods(steam_path: Path | None = None, local_path: Path | None = None
         result.warnings.append(f"Steam: {configured}")
     if steam:
         for content in workshop_content_dirs(steam):
+            was_complete = result.complete
+            result.complete = True
             try:
                 for child in sorted(content.iterdir()):
                     if child.is_dir() and child.name.isdigit():
@@ -101,7 +107,12 @@ def discover_mods(steam_path: Path | None = None, local_path: Path | None = None
             except OSError as exc:
                 result.complete = False
                 result.warnings.append(f"{content}: {exc}")
+            if result.complete:
+                result.complete_roots.append(content.resolve())
+            result.complete = result.complete and was_complete
     root = local_path if local_path is not None else local_mods_dir()
+    other_roots_complete = result.complete
+    result.complete = True
     try:
         children = sorted(root.iterdir())
     except FileNotFoundError:
@@ -119,12 +130,23 @@ def discover_mods(steam_path: Path | None = None, local_path: Path | None = None
         elif child.is_file() and child.suffix.lower() == ".mod":
             try:
                 fields = dict(_FIELD_RE.findall(child.read_text(encoding="utf-8-sig")))
+                from .community_db import configured_workshop_id
+                if fields.get('remote_file_id') == configured_workshop_id():
+                    continue
                 value = fields.get("path", "").replace('\\"', '"').replace("\\\\", "\\")
                 if not value:
+                    if fields.get('archive'):
+                        from .i18n import tr
+                        result.warnings.append(f"{child.name}: {tr('Архивный мод: перевод архивов пока не поддерживается')}")
+                        continue
                     raise ValueError("Missing path in launcher descriptor")
                 target = Path(value.replace("\\", "/")).expanduser()
                 add(target if target.is_absolute() else root.parent / target, "local")
             except (OSError, ValueError) as exc:
-                result.complete = False
+                if isinstance(exc, OSError) and not isinstance(exc, FileNotFoundError):
+                    result.complete = False
                 result.warnings.append(f"{child}: {exc}")
+    if result.complete:
+        result.complete_roots.append(root.resolve())
+    result.complete = result.complete and other_roots_complete
     return result
