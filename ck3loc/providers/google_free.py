@@ -9,6 +9,7 @@ Google может ограничить частые запросы (HTTP 429) и
 from __future__ import annotations
 
 import re
+import threading
 import time
 
 from ck3loc.core import net
@@ -16,9 +17,27 @@ from ck3loc.core import net
 from .base import ProviderError, ProviderInfo, ProviderPaused, TranslationProvider, lang_code
 
 _URL = "https://translate.googleapis.com/translate_a/single"
-# Google иногда вставляет пробелы внутрь маркеров: «⟦ T1 ⟧», «⟦T 1⟧».
-_SPACED_MARK = re.compile(r"⟦\s*T\s*(\d+)\s*⟧")
+# Google портит маркеры: вставляет пробелы («⟦ T1 ⟧») и при переводе на русский
+# заменяет латинскую T на кириллическую («⟦Т1⟧»), реже на греческую или строчную.
+_SPACED_MARK = re.compile(r"⟦\s*[TtТтΤτ]\s*(\d+)\s*⟧")
+# В строке только коды, цифры и знаки — переводить нечего, запрос не нужен.
+_NOTHING_TO_TRANSLATE = re.compile(r"(?:⟦T\d+⟧|[\W\d_])*")
 _RETRY_STATUSES = {429, 500, 502, 503, 504}
+LIMITED = ("Google временно ограничил бесплатные запросы с вашего IP-адреса; готовые строки сохранены. "
+           "Продолжите позже через «Историю действий» или увеличьте паузу между запросами")
+
+
+_EDGE = re.compile(r"^((?:\s|⟦T\d+⟧)*)(.*?)((?:\s|⟦T\d+⟧)*)$", re.S)
+
+
+def split_edges(text: str) -> tuple[str, str, str]:
+    """(начало, середина, конец): коды и пробелы по краям в сервис не отправляются.
+
+    Веб-переводчики теряют маркеры на краях строки («#n Disabled#!» → без тегов);
+    переводится только середина, края возвращаются как есть.
+    """
+    head, core, tail = _EDGE.match(text).groups()
+    return head, core, tail
 
 
 def normalize_marks(text: str) -> str:
@@ -38,15 +57,35 @@ class GoogleFreeProvider(TranslationProvider):
     batch_size = 20
     delay = 0.35       # пауза между строками, чтобы не получить временный бан по IP
     retries = 4
+    # Параллельные запросы к публичному шлюзу живьём дают бан по IP (302 на google.com/sorry).
+    max_workers = 1
+
+    def __init__(self, api_key: str = "", **options):
+        super().__init__(api_key, **options)
+        self._client = None
+        self._client_lock = threading.Lock()
+
+    def _http(self):
+        """Одно соединение на задание: без нового TLS-рукопожатия (через прокси ~1,5 с) на каждую строку."""
+        with self._client_lock:
+            if self._client is None:
+                self._client = net.client(_URL, timeout=30.0)
+            return self._client
 
     def translate_batch(self, texts, source_lang, target_lang,
                         glossary=None, context_types=None):
         source, target = lang_code(source_lang), lang_code(target_lang)
         result = []
-        for i, text in enumerate(texts):
-            if i:
+        sent = 0
+        for text in texts:
+            if _NOTHING_TO_TRANSLATE.fullmatch(text):
+                result.append(text)
+                continue
+            if sent:
                 time.sleep(self.delay)
-            result.append(self._translate(text, source, target) if text.strip() else text)
+            head, core, tail = split_edges(text)
+            result.append(head + self._translate(core, source, target) + tail)
+            sent += 1
         return result
 
     def _translate(self, text: str, source: str, target: str) -> str:
@@ -54,16 +93,18 @@ class GoogleFreeProvider(TranslationProvider):
 
         for attempt in range(self.retries):
             try:
-                resp = net.post(_URL, params={"client": "gtx", "sl": source, "tl": target, "dt": "t"},
-                                data={"q": text}, timeout=30.0)
+                resp = self._http().post(_URL, params={"client": "gtx", "sl": source, "tl": target, "dt": "t"},
+                                         data={"q": text})
             except httpx.HTTPError as exc:
                 raise ProviderPaused("Google Translate (бесплатно): нет соединения; продолжите позже") from exc
+            if resp.status_code in (301, 302, 303) and '/sorry' in resp.headers.get('location', ''):
+                # Проверка «необычный трафик»: повторы только продлевают блокировку.
+                raise ProviderPaused(LIMITED)
             if resp.status_code in _RETRY_STATUSES and attempt + 1 < self.retries:
                 time.sleep(2 * 2 ** attempt)
                 continue
             if resp.status_code == 429:
-                raise ProviderPaused("Google временно ограничил бесплатные запросы (HTTP 429); "
-                                     "готовые строки сохранены, продолжите позже")
+                raise ProviderPaused(LIMITED)
             if resp.status_code != 200:
                 raise ProviderPaused(f"Google Translate (бесплатно): HTTP {resp.status_code}")
             try:

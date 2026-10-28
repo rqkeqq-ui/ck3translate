@@ -164,6 +164,10 @@ def code_signature(value: str) -> dict[str, list[str]]:
 
 def validate_translation(source: str, target: str) -> list[str]:
     """Проверки после перевода (раздел 11 спецификации)."""
+    # Артикль названия титула («The ») в языках без артиклей ваниль CK3 заменяет
+    # одной ссылкой: $articleblank_blank$ или $POSSESSIVE_SPECIAL$.
+    if source.strip().lower() in {"the", "a", "an"} and re.fullmatch(r"\$\w+\$", target.strip()):
+        return []
     errors: list[str] = []
     ssig = code_signature(source)
     tsig = code_signature(target)

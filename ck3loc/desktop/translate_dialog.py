@@ -153,10 +153,22 @@ class TranslateOptions(QWidget):
         reuse = not self.retranslate.isChecked()
         for box in (self.use_vanilla, self.use_memory, self.allow_service_memory):
             box.setEnabled(reuse)
+        single = getattr(PROVIDERS[self.provider()], 'max_workers', None) == 1
+        self.workers.setEnabled(not single)
+        self.workers.setToolTip(
+            tr('Бесплатный Google принимает только один запрос за раз: параллельные запросы '
+               'приводят к блокировке по IP.') if single else
+            tr('Сколько запросов отправлять одновременно. Быстрее, но бесплатные тарифы '
+               'могут ограничить частые запросы.'))
         self.changed.emit()
 
     def provider(self) -> str:
         return self.combo.currentData()
+
+    def max_workers(self) -> int:
+        """Сколько запросов уйдёт одновременно с учётом ограничения переводчика."""
+        limit = getattr(PROVIDERS[self.provider()], 'max_workers', None)
+        return min(self.workers.value(), limit) if limit else self.workers.value()
 
     def batch_size(self) -> int:
         return min(self.size.value(), PROVIDERS[self.provider()].batch_size)
@@ -165,7 +177,7 @@ class TranslateOptions(QWidget):
         return dict(retranslate=self.retranslate.isChecked(), use_vanilla=self.use_vanilla.isChecked(),
                     use_memory=self.use_memory.isChecked(),
                     allow_service_memory=self.allow_service_memory.isChecked(),
-                    rows_per_request=self.size.value(), workers=self.workers.value(),
+                    rows_per_request=self.size.value(), workers=self.max_workers(),
                     request_pause=round(self.pause.value(), 1))
 
     def needs_vanilla(self) -> bool:
@@ -347,8 +359,8 @@ class TranslateDialog(QDialog):
                            '({requests} запросов по {size} строк).',
                            n=len(self.planned), reused=reused, sent=to_send, requests=requests, size=size)
                  + (' ' + tr_format('Одновременно: {workers}, пауза между запросами: {pause} с.',
-                                    workers=self.opts.workers.value(), pause=round(self.opts.pause.value(), 1))
-                    if requests > 1 and (self.opts.workers.value() > 1 or self.opts.pause.value() > 0) else ''),
+                                    workers=self.opts.max_workers(), pause=round(self.opts.pause.value(), 1))
+                    if requests > 1 and (self.opts.max_workers() > 1 or self.opts.pause.value() > 0) else ''),
                  tr_format('Переводчик: {provider}', provider=title) + (f' · {model}' if model else '') + '. '
                  + tr('Стоимость неизвестна. Результаты сохраняются в черновик и ничего не меняют до применения.')]
         self.summary.setText('\n'.join(lines))

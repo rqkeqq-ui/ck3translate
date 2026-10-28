@@ -39,6 +39,21 @@ class TranslateStats:
 
 
 MAX_WORKERS = 8  # одновременных запросов к переводчику
+# Артикли названий титулов (*_article): в ванили ключи строчные («the »),
+# в модах часто «The ». Для них — поиск без учёта регистра.
+_ARTICLES = frozenset({'the', 'a', 'an'})
+
+
+def vanilla_hit(lookup: dict[str, str], text: str) -> str | None:
+    """Перевод из ванили CK3: точное совпадение, а для одного артикля — и без учёта регистра."""
+    hit = lookup.get(text)
+    if hit is None and text.strip().lower() in _ARTICLES:
+        word = text.strip().lower()
+        for variant in (text.lower(), word + ' ', word):
+            hit = lookup.get(variant)
+            if hit is not None:
+                break
+    return hit
 
 
 def wait_pause(seconds: float, cancellation: CancellationToken) -> bool:
@@ -138,7 +153,9 @@ def translate_rows(
         raise ValueError(f'Parallel requests must be between 1 and {MAX_WORKERS}')
     if request_pause is None or float(request_pause) < 0:
         raise ValueError('Pause between requests must not be negative')
-    workers, request_pause = int(workers), float(request_pause)
+    # Провайдер может ограничить параллельность (бесплатный Google — один запрос за раз).
+    workers = min(int(workers), int(getattr(provider, 'max_workers', MAX_WORKERS) or MAX_WORKERS))
+    request_pause = float(request_pause)
     cancellation = cancellation or CancellationToken()
     stats = TranslateStats(total=len(rows))
     source_lang = ctx.project["source_lang"]
@@ -189,7 +206,7 @@ def translate_rows(
                 or registered[key]['baseline'] != unit_value(current_unit)):
             stats.failed.append((key, 'Source changed; export or plan this key again'))
             continue
-        hit = vl.get(text) if use_vanilla and not retranslate else None
+        hit = vanilla_hit(vl, text) if use_vanilla and not retranslate else None
         if hit is not None:
             try:
                 save(key, hit, 'vanilla')
@@ -302,7 +319,7 @@ def plan_translation(ctx, rows, provider_name: str, *, retranslate=False, use_va
         ctx.project['source_lang'], ctx.project['target_lang']) if use_vanilla and not retranslate else {}
     result = []
     for row in rows:
-        hit = vl.get(row['source']) if use_vanilla and not retranslate else None
+        hit = vanilla_hit(vl, row['source']) if use_vanilla and not retranslate else None
         memory = tm_lookup_variant(ctx.conn, ctx.project['source_lang'], ctx.project['target_lang'],
             row['source'], project_id=ctx.project_id, key=row['key'],
             allow_unreviewed_service=allow_service_memory or provider_name not in LLM_PROVIDERS
