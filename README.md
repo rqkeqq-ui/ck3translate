@@ -71,6 +71,6 @@ The app checks for new stable releases at startup. **Update** opens the GitHub r
 
 ## Free and open source
 
-The app is free and licensed under [MIT](LICENSE). Translation services may charge separately. This project is not affiliated with Paradox Interactive or Valve. Dependencies retain their [own licenses](docs/THIRD_PARTY_NOTICES.md).
+The app is free and open source under the [GNU GPL v3](LICENSE) (since 0.3.0; earlier versions were MIT). You may use, study, change and share it; modified versions you distribute must stay under the GPL with source code. Translation services may charge separately. This project is not affiliated with Paradox Interactive or Valve. Dependencies retain their [own licenses](docs/THIRD_PARTY_NOTICES.md).
 
 [Support development](docs/SUPPORT.md) · [User guide](docs/USER_GUIDE.en.md) · [Описание на русском](docs/README.ru.md)
