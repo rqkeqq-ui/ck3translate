@@ -362,13 +362,31 @@ def package_name(title: str, target_lang: str) -> str:
     return f"{_slug(title)}_{target_lang}_{time.strftime('%Y%m%d_%H%M%S')}"
 
 
-def package_sizes(total: int, archives: int | None = None, rows_per_archive: int | None = None) -> list[int]:
-    """Размеры архивов: поровну на N архивов или не больше N строк в архиве.
+def package_sizes(total: int, archives: int | None = None, rows_per_archive: int | None = None,
+                  *, chars_per_archive: int | None = None, lengths: list[int] | None = None) -> list[int]:
+    """Размеры архивов: поровну на N архивов, не больше N строк или N символов в архиве.
 
     Пустых архивов не бывает; при делении по строкам последний архив меньше.
+    По объёму (lengths — длина исходника каждой строки по порядку) архив
+    закрывается, когда следующая строка превысит лимит; строка длиннее
+    лимита уходит в отдельный архив.
     """
     if total <= 0:
         return []
+    if chars_per_archive is not None:
+        if isinstance(chars_per_archive, bool) or int(chars_per_archive) <= 0:
+            raise ValueError('Characters per archive must be a positive integer')
+        if lengths is None or len(lengths) != total:
+            raise ValueError('Row lengths are required for splitting by text volume')
+        limit, sizes, count, volume = int(chars_per_archive), [], 0, 0
+        for length in lengths:
+            if count and volume + length > limit:
+                sizes.append(count)
+                count, volume = 0, 0
+            count += 1
+            volume += length
+        sizes.append(count)
+        return sizes
     if rows_per_archive is not None:
         if isinstance(rows_per_archive, bool) or int(rows_per_archive) <= 0:
             raise ValueError('Rows per archive must be a positive integer')
@@ -378,6 +396,15 @@ def package_sizes(total: int, archives: int | None = None, rows_per_archive: int
         raise ValueError('Archive count must be a positive integer')
     count = max(1, min(int(archives or 1), total))
     return [total // count + (1 if i < total % count else 0) for i in range(count)]
+
+
+def split_preview(row_groups, **split) -> list[int]:
+    """Размеры архивов для предпросмотра: row_groups — строки проектов в порядке выгрузки."""
+    rows = [r for group in row_groups for r in group]
+    if split.get('chars_per_archive') is not None:
+        return package_sizes(len(rows), chars_per_archive=split['chars_per_archive'],
+                             lengths=[len(r['source']) for r in rows])
+    return package_sizes(len(rows), split.get('archives'), split.get('rows_per_archive'))
 
 
 def describe_sizes(sizes: list[int]) -> str:
@@ -398,7 +425,8 @@ def _slug(text: str) -> str:
 
 
 def write_package(items: list[tuple], out_dir: Path, fmt: str = 'jsonl', archives: int | None = None,
-                  name: str = 'ck3loc_task', *, rows_per_archive: int | None = None) -> PackageResult:
+                  name: str = 'ck3loc_task', *, rows_per_archive: int | None = None,
+                  chars_per_archive: int | None = None) -> PackageResult:
     """items: [(ctx, rows)] — строки rows_to_translate каждого проекта.
 
     Создаёт name.zip (или name_1_of_N.zip …) и рядом name_PROMPT.txt. Каждый
@@ -412,7 +440,8 @@ def write_package(items: list[tuple], out_dir: Path, fmt: str = 'jsonl', archive
         raise ValueError('Unsupported export format')
     items = [(ctx, rows) for ctx, rows in items if rows]
     total = sum(len(rows) for _ctx, rows in items)
-    sizes = package_sizes(total, archives, rows_per_archive)
+    lengths = [len(r['source']) for _ctx, rows in items for r in rows] if chars_per_archive is not None else None
+    sizes = package_sizes(total, archives, rows_per_archive, chars_per_archive=chars_per_archive, lengths=lengths)
     if not sizes:
         raise ValueError('Nothing to export')
     out_dir = Path(out_dir)

@@ -7,7 +7,7 @@
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QThread, Signal
+from PySide6.QtCore import QThread, Qt, Signal
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QHBoxLayout, QLabel, QPlainTextEdit,
                                QPushButton, QSpinBox, QVBoxLayout, QWidget)
 
@@ -125,13 +125,18 @@ class SplitControl(QWidget):
         self.mode = QComboBox()
         self.mode.addItem(tr('на число архивов'), 'archives')
         self.mode.addItem(tr('по числу строк в архиве'), 'rows')
+        self.mode.addItem(tr('по объёму текста в архиве'), 'chars')
+        self.mode.setItemData(2, tr('Лимит нейросети считается в объёме текста, а не в строках: '
+                                    'архив закрывается, когда набрано заданное число символов исходника.'),
+                              Qt.ItemDataRole.ToolTipRole)
         row.addWidget(self.mode)
         self.size = QSpinBox()
-        self.size.setMaximumWidth(150)
+        self.size.setMaximumWidth(170)
         row.addWidget(self.size)
         row.addStretch(1)
         self._values = {'archives': int(settings.get('export_archives') or 5),
-                        'rows': int(settings.get('export_rows_per_archive') or 250)}
+                        'rows': int(settings.get('export_rows_per_archive') or 250),
+                        'chars': int(settings.get('export_chars_per_archive') or 20000)}
         self.mode.setCurrentIndex(max(0, self.mode.findData(settings.get('export_split_mode') or 'archives')))
         self._apply_mode()
         self.split.toggled.connect(self._toggled)
@@ -146,6 +151,10 @@ class SplitControl(QWidget):
             self.size.setRange(1, 1_000_000)
             self.size.setSingleStep(50)
             self.size.setSuffix(' ' + tr('строк'))
+        elif mode == 'chars':
+            self.size.setRange(500, 10_000_000)
+            self.size.setSingleStep(1000)
+            self.size.setSuffix(' ' + tr('символов'))
         else:
             self.size.setRange(2, 100)
             self.size.setSingleStep(1)
@@ -168,13 +177,16 @@ class SplitControl(QWidget):
         from ck3loc.core import settings
         mode = self.mode.currentData()
         self._values[mode] = value
-        settings.set_value('export_archives' if mode == 'archives' else 'export_rows_per_archive', value)
+        keys = {'archives': 'export_archives', 'rows': 'export_rows_per_archive', 'chars': 'export_chars_per_archive'}
+        settings.set_value(keys[mode], value)
         self.changed.emit()
 
     def kwargs(self) -> dict:
-        """Параметры для package_sizes / write_package."""
+        """Параметры для split_preview / write_package."""
         if not self.split.isChecked():
             return {'archives': 1}
         if self.mode.currentData() == 'rows':
             return {'rows_per_archive': self.size.value()}
+        if self.mode.currentData() == 'chars':
+            return {'chars_per_archive': self.size.value()}
         return {'archives': self.size.value()}

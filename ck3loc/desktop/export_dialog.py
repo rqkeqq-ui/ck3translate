@@ -124,11 +124,15 @@ class ExportScopeDialog(QDialog):
         return None
 
     def update_preview(self, *_):
-        from ck3loc.core.exchange import describe_sizes, package_sizes
+        from ck3loc.core.exchange import describe_sizes, package_sizes, split_preview
         from ck3loc.core.ops import rows_to_translate
-        total = (len(rows_to_translate(self.ctx, self.scope(), self.keys)) if self.ctx
-                 else self.counts.get(self.scope(), 0))
-        sizes = package_sizes(total, **self.split_kwargs())
+        if self.ctx:
+            rows = rows_to_translate(self.ctx, self.scope(), self.keys)
+            total, sizes = len(rows), split_preview([rows], **self.split_kwargs())
+        else:
+            total = self.counts.get(self.scope(), 0)
+            split = self.split_kwargs()
+            sizes = package_sizes(total, archives=1) if 'chars_per_archive' in split else package_sizes(total, **split)
         self.btn_ok.setEnabled(bool(sizes))
         self.preview.setText(tr_format('Строк: {n}. Будет создано ZIP-архивов: {parts} ({sizes} строк) '
                                        'и один файл с промптом рядом с ними.',

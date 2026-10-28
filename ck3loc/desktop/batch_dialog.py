@@ -323,16 +323,12 @@ class BatchDialog(QDialog):
         return self.splitter.kwargs()
 
     def update_preview(self, *_):
-        from ck3loc.core.exchange import describe_sizes, package_sizes
+        from ck3loc.core.exchange import describe_sizes, split_preview
         if not hasattr(self, 'summary'):
             return
-        total = mods = 0
-        for cand in self.selected():
-            rows = self._selected_rows(cand)
-            if rows:
-                mods += 1
-                total += len(rows)
-        sizes = package_sizes(total, **self.split_kwargs())
+        groups = [rows for rows in (self._selected_rows(c) for c in self.selected()) if rows]
+        mods, total = len(groups), sum(len(rows) for rows in groups)
+        sizes = split_preview(groups, **self.split_kwargs())
         self.summary.setText(tr_format('Выбрано модов: {mods}; строк: {n}. Выгрузка для LLM: ZIP-архивов {parts} '
                                        '({sizes} строк) и один файл с промптом. Моды внутри архива — отдельными папками.',
                                        mods=mods, n=total, parts=len(sizes), sizes=describe_sizes(sizes)))
@@ -357,7 +353,7 @@ class BatchDialog(QDialog):
     # ---------- выгрузка ----------
 
     def export(self):
-        from ck3loc.core.exchange import describe_sizes, package_sizes
+        from ck3loc.core.exchange import describe_sizes, split_preview
         fmt, split = self.format.currentData(), self.split_kwargs()
         chosen = [(c, self._selected_rows(c)) for c in self.selected()]
         chosen = [(c, rows) for c, rows in chosen if rows]
@@ -367,8 +363,7 @@ class BatchDialog(QDialog):
         directory = QFileDialog.getExistingDirectory(self, tr('Куда сохранить архивы задания'))
         if not directory:
             return
-        total = sum(len(rows) for _c, rows in chosen)
-        sizes = package_sizes(total, **split)
+        sizes = split_preview([rows for _c, rows in chosen], **split)
         details = '\n'.join(f'{cand.name}: {len(rows)}' for cand, rows in chosen)
         summary = tr_format('Будет создано ZIP-архивов: {parts} ({sizes} строк) для {mods} модов и один файл с '
                             'промптом в папке:\n{root}', parts=len(sizes), sizes=describe_sizes(sizes),
