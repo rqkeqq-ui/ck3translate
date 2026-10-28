@@ -85,8 +85,13 @@ def _smoke_imports() -> None:
     from ck3loc.core.exchange import FORMATS
     from ck3loc.core.jobs import recover_interrupted
 
+    from ck3loc.providers.web_free import WEB_FREE_PROVIDERS, _library
+
     assert FORMATS == {"jsonl", "xliff", "yml"}
     assert jwt.algorithms.has_crypto
+    # Бесплатные веб-переводчики грузятся только при переводе — проверяем, что библиотека в сборке.
+    pool = set(_library().translators_pool)
+    assert all(p.engine in pool for p in WEB_FREE_PROVIDERS), pool
     conn = db.connect()
     try:
         recover_interrupted(conn)

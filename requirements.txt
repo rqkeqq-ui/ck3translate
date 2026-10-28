@@ -4,3 +4,4 @@ keyring>=24
 watchdog>=4
 PyJWT[crypto]>=2.9
 filelock>=3.16
+translators>=6.0.4

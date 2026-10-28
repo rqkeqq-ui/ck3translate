@@ -1,8 +1,10 @@
 """Translation origin is independent of human review and reuse method."""
 from __future__ import annotations
 
-# google_free — тот же Google Translate без ключа: для фильтров и удаления это сервис Google.
-SERVICE_PROVIDERS = frozenset({'google', 'google_free', 'deepl', 'yandex'})
+# Бесплатные варианты (google_free и веб-переводчики translators) — те же сервисы
+# Google/Bing/Яндекс/Alibaba: для фильтров и «Убрать перевод сервисов» это сервисный перевод.
+SERVICE_PROVIDERS = frozenset({'google', 'google_free', 'google_web_free', 'bing_free', 'yandex_free',
+                               'alibaba_free', 'deepl', 'yandex'})
 LLM_PROVIDERS = frozenset({'openai', 'claude', 'chatgpt', 'external_llm'})
 
 

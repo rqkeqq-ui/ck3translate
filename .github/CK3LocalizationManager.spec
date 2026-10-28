@@ -13,6 +13,9 @@ datas += copy_metadata('PyJWT')
 datas += copy_metadata('cryptography')
 datas += copy_metadata('filelock')
 hiddenimports += collect_submodules('keyring.backends')
+# Бесплатные веб-переводчики (translators) импортируются лениво, при первом переводе.
+hiddenimports += ['translators'] + collect_submodules('exejs')
+datas += copy_metadata('translators')
 
 
 a = Analysis(

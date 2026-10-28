@@ -519,5 +519,11 @@
  "Ключ не нужен: сервер работает на этом компьютере. Запустите его и нажмите «Загрузить модели».": "Aucune clé nécessaire : le serveur tourne sur cet ordinateur. Démarrez-le et cliquez sur « Charger les modèles ».",
  "Выберите модель…": "Choisissez un modèle…",
  "Найдено моделей: {n}.": "Modèles trouvés : {n}.",
- "Сервис не вернул ни одной модели.": "Le service n'a renvoyé aucun modèle."
+ "Сервис не вернул ни одной модели.": "Le service n'a renvoyé aucun modèle.",
+ "Google временно ограничил бесплатные запросы с вашего IP-адреса; готовые строки сохранены. Продолжите позже через «Историю действий» или увеличьте паузу между запросами": "Google a temporairement limité les requêtes gratuites depuis votre adresse IP ; les lignes terminées sont enregistrées. Reprenez plus tard depuis « Historique des actions » ou augmentez la pause entre les requêtes",
+ "Бесплатный Google принимает только один запрос за раз: параллельные запросы приводят к блокировке по IP.": "Google gratuit n'accepte qu'une requête à la fois : les requêtes parallèles entraînent un blocage par IP.",
+ "Bing Translator · бесплатно": "Bing Translator · gratuit",
+ "Google (веб-версия) · бесплатно": "Google (web) · gratuit",
+ "Яндекс Переводчик · бесплатно": "Yandex Traduction · gratuit",
+ "Alibaba · бесплатно": "Alibaba · gratuit"
 }

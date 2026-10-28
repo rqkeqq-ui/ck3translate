@@ -9,9 +9,11 @@ from .google_free import GoogleFreeProvider
 from .llm import AnthropicProvider, OpenAICompatProvider
 from .yandex import YandexProvider
 from .chatgpt import ChatGPTProvider
+from .web_free import WEB_FREE_PROVIDERS
 
 PROVIDERS: dict[str, type[TranslationProvider]] = {
     "google_free": GoogleFreeProvider,
+    **{p.info.name: p for p in WEB_FREE_PROVIDERS},
     "google": GoogleProvider,
     "yandex": YandexProvider,
     "deepl": DeepLProvider,
