@@ -31,9 +31,11 @@ from ck3loc.core.community_db import (
     workshop_page_url,
 )
 from ck3loc.core.db import backups_dir, data_dir
-from ck3loc.core.i18n import DEFAULT_UI_LANG, available_languages, tr
+from ck3loc.core.i18n import DEFAULT_UI_LANG, available_languages, tr, tr_format
 from ck3loc.core.vanilla import find_ck3_game_dir, game_languages
 from ck3loc.desktop.widgets import Card, field_row
+from ck3loc.providers.base import ProviderError
+from ck3loc.providers.llm import list_models
 from ck3loc.providers.registry import PROVIDERS, get_api_key, set_api_key
 
 
@@ -228,20 +230,46 @@ class SettingsPage(QWidget):
             lambda: settings.set_value("claude_model", self.claude_model.text().strip())
         )
         extra.add(field_row("Модель Claude", self.claude_model))
+        from ck3loc.providers.presets import PRESETS, preset_for_url
+        self.openai_preset = QComboBox()
+        for p in PRESETS:
+            self.openai_preset.addItem(p.title, p.id)
+        self.openai_preset.setToolTip(
+            "Готовый адрес сервиса с OpenAI-совместимым API. Ключ вводится в «Ключи API "
+            "переводчиков» → «LLM (OpenAI-совместимый API)»; локальным серверам ключ не нужен.")
+        extra.add(field_row("Сервис OpenAI-совместимого API", self.openai_preset))
         self.openai_url = QLineEdit(cfg.get("openai_base_url", ""))
         self.openai_url.setPlaceholderText("https://api.openai.com/v1")
-        self.openai_url.editingFinished.connect(
-            lambda: settings.set_value("openai_base_url",
-                                       self.openai_url.text().strip())
-        )
+        self.openai_url.editingFinished.connect(self._openai_url_edited)
         extra.add(field_row("Адрес OpenAI-совместимого API", self.openai_url))
+        model_row = QWidget()
+        mh = QHBoxLayout(model_row)
+        mh.setContentsMargins(0, 0, 0, 0)
         self.openai_model = QLineEdit(cfg.get("openai_model", ""))
         self.openai_model.setPlaceholderText("gpt-4o-mini")
         self.openai_model.editingFinished.connect(
             lambda: settings.set_value("openai_model",
                                        self.openai_model.text().strip())
         )
-        extra.add(field_row("Модель OpenAI-совместимого API", self.openai_model))
+        mh.addWidget(self.openai_model, stretch=1)
+        self.openai_models = QComboBox()
+        self.openai_models.setMinimumWidth(200)
+        self.openai_models.setVisible(False)
+        self.openai_models.activated.connect(self._openai_model_chosen)
+        self.openai_models.currentIndexChanged.connect(self._openai_model_chosen)
+        mh.addWidget(self.openai_models)
+        self.btn_models = QPushButton("Загрузить модели")
+        self.btn_models.setToolTip("Запросить у сервиса список доступных моделей (GET /models).")
+        self.btn_models.clicked.connect(lambda: self.load_models())
+        mh.addWidget(self.btn_models)
+        extra.add(field_row("Модель OpenAI-совместимого API", model_row))
+        self.openai_models_status = QLabel()
+        self.openai_models_status.setProperty("role", "dim")
+        self.openai_models_status.setWordWrap(True)
+        extra.add(self.openai_models_status)
+        self._models_worker = None
+        self.openai_preset.setCurrentIndex(max(0, self.openai_preset.findData(preset_for_url(self.openai_url.text()))))
+        self.openai_preset.currentIndexChanged.connect(self._openai_preset_changed)
         self.yandex_folder = QLineEdit(cfg.get("yandex_folder_id", ""))
         self.yandex_folder.setPlaceholderText("folder id из Яндекс Облака")
         self.yandex_folder.editingFinished.connect(
@@ -394,6 +422,71 @@ class SettingsPage(QWidget):
     def _clear_key(self, name: str):
         set_api_key(name, "")
         self._refresh_keys()
+
+    # ---------- OpenAI-совместимый API ----------
+
+    def _openai_url_edited(self):
+        from ck3loc.providers.presets import preset_for_url
+        url = self.openai_url.text().strip()
+        settings.set_value("openai_base_url", url)
+        self.openai_preset.blockSignals(True)
+        self.openai_preset.setCurrentIndex(max(0, self.openai_preset.findData(preset_for_url(url))))
+        self.openai_preset.blockSignals(False)
+
+    def _openai_preset_changed(self, *_):
+        from ck3loc.providers.presets import apply_preset
+        chosen = apply_preset(self.openai_preset.currentData())
+        if chosen.id == "custom":
+            return
+        self.openai_url.setText(chosen.base_url)
+        self.openai_model.setText(settings.get("openai_model") or "")
+        self.openai_models.clear()
+        self.openai_models.setVisible(False)
+        self.openai_models_status.setText(
+            tr("Нужен ключ API этого сервиса: сохраните его в «LLM (OpenAI-совместимый API)» выше.")
+            if chosen.needs_key else
+            tr("Ключ не нужен: сервер работает на этом компьютере. Запустите его и нажмите «Загрузить модели»."))
+
+    def _openai_model_chosen(self, *_):
+        model = self.openai_models.currentData()
+        if model:
+            self.openai_model.setText(model)
+            settings.set_value("openai_model", model)
+
+    def load_models(self, sync: bool = False):
+        url = self.openai_url.text().strip()
+        settings.set_value("openai_base_url", url)
+        key = get_api_key("openai")
+
+        def done(models, error):
+            self.btn_models.setEnabled(True)
+            self._models_worker = None
+            if error:
+                self.openai_models_status.setText(error)
+                return
+            self.openai_models.blockSignals(True)
+            self.openai_models.clear()
+            self.openai_models.addItem(tr("Выберите модель…"), "")
+            for name in models:
+                self.openai_models.addItem(name, name)
+            self.openai_models.blockSignals(False)
+            self.openai_models.setVisible(bool(models))
+            self.openai_models_status.setText(
+                tr_format("Найдено моделей: {n}.", n=len(models)) if models
+                else tr("Сервис не вернул ни одной модели."))
+
+        if sync:
+            try:
+                done(list_models(url, key), "")
+            except ProviderError as exc:
+                done(None, str(exc))
+            return
+        from ck3loc.desktop.chatgpt_settings import AccountWorker
+        self.btn_models.setEnabled(False)
+        self.openai_models_status.setText(tr("Загрузка моделей…"))
+        self._models_worker = AccountWorker(lambda _token: list_models(url, key))
+        self._models_worker.result.connect(done)
+        self._models_worker.start()
 
     def _community_toggled(self, enabled: bool):
         settings.set_value("community_db_enabled", enabled)

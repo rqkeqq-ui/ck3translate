@@ -64,6 +64,29 @@ def _parse_array(raw: str, expected: int) -> list[str]:
     return [str(x) for x in arr]
 
 
+def list_models(base_url: str, api_key: str = "") -> list[str]:
+    """Модели OpenAI-совместимого сервиса: GET {base_url}/models → data[].id."""
+    import httpx
+
+    base_url = (base_url or "").strip().rstrip("/")
+    if not base_url:
+        raise ProviderError("Укажите адрес OpenAI-совместимого API.")
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    try:
+        resp = net.get(f"{base_url}/models", headers=headers, timeout=30.0)
+    except httpx.HTTPError as e:
+        raise ProviderError(f"LLM API ({base_url}): сетевая ошибка ({e})") from e
+    if resp.status_code != 200:
+        raise ProviderError(f"LLM API ({base_url}): HTTP {resp.status_code} — {resp.text[:200]}")
+    try:
+        payload = resp.json()
+        items = payload.get("data", payload.get("models", [])) if isinstance(payload, dict) else payload
+        names = {str(i.get("id") or i.get("name")) for i in items if isinstance(i, dict) and (i.get("id") or i.get("name"))}
+    except (ValueError, AttributeError, TypeError) as e:
+        raise ProviderError(f"LLM API ({base_url}): неожиданный ответ списка моделей") from e
+    return sorted(names)
+
+
 class AnthropicProvider(TranslationProvider):
     info = ProviderInfo("claude", "Claude (Anthropic API)", needs_key=True, wave=2)
     batch_size = 30
