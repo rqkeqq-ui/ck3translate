@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from dataclasses import dataclass, field
 
 # защитный маркер: символы, которые переводчики не трогают
@@ -120,6 +121,22 @@ def protect(value: str) -> Protected:
     return Protected(text="".join(out), mapping=mapping)
 
 
+def protect_with(value: str, mapping: dict[str, str]) -> str:
+    """Записать текст (например, текущий перевод) теми же маркерами, что и исходник.
+
+    Нейросеть видит исходник и прежний перевод в одной записи кодов и не
+    копирует настоящие коды вместо маркеров.
+    """
+    by_code: dict[str, list[str]] = {}
+    for mark, code in mapping.items():
+        by_code.setdefault(code, []).append(mark)
+    out: list[str] = []
+    for t in tokenize(value):
+        marks = by_code.get(t.text) if t.kind in CODE_KINDS else None
+        out.append(marks.pop(0) if marks else t.text)
+    return "".join(out)
+
+
 def restore(protected_text: str, mapping: dict[str, str]) -> tuple[str, list[str]]:
     """Вернуть коды на место. Возвращает (строка, список проблем)."""
     problems: list[str] = []
@@ -135,6 +152,15 @@ def restore(protected_text: str, mapping: dict[str, str]) -> tuple[str, list[str
 
     result = _MARK_RE.sub(_sub, protected_text)
     missing = set(mapping) - used
+    # Вместо маркера вернули точную копию исходного кода — это не ошибка;
+    # совпадение набора кодов затем проверяет validate_translation.
+    literal = Counter(t.text for t in tokenize(result) if t.kind in CODE_KINDS)
+    for mark in used:
+        literal[mapping[mark]] -= 1
+    for mark in sorted(missing, key=lambda m: int(_MARK_RE.match(m).group(1))):
+        if literal[mapping[mark]] > 0:
+            literal[mapping[mark]] -= 1
+            missing.discard(mark)
     for mark in sorted(missing):
         problems.append(f"потерян маркер {mark} ({mapping[mark]})")
     if MARK_OPEN in result or MARK_CLOSE in result:

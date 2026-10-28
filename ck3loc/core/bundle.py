@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from .scanner import semantic_hash
-from .tokens import protect, restore, validate_translation
+from .tokens import protect, protect_with, restore, validate_translation
 
 
 def key_type(key: str) -> str:
@@ -85,7 +85,8 @@ def export_jsonl(
             "source": prot.text,
             "tokens": prot.mapping,
             "target": "",
-            'current_target': row.get('current_target', ''),
+            # Прежний перевод — в тех же маркерах, что и исходник.
+            'current_target': protect_with(row.get('current_target', ''), prot.mapping),
         }
         lines.append(json.dumps(obj, ensure_ascii=False))
         reg_rows.append(

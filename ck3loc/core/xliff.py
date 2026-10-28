@@ -15,7 +15,7 @@ from pathlib import Path
 
 from .bundle import ImportReport, ImportedUnit, RejectedUnit
 from .scanner import semantic_hash
-from .tokens import protect, restore, validate_translation
+from .tokens import protect, protect_with, restore, validate_translation
 
 NS = "urn:oasis:names:tc:xliff:document:2.0"
 
@@ -67,7 +67,7 @@ def export_xliff(
         notes = ET.SubElement(unit, f"{{{NS}}}notes")
         note = ET.SubElement(notes, f"{{{NS}}}note", {"category": "tokens"})
         note.text = json.dumps(prot.mapping, ensure_ascii=False)
-        ET.SubElement(notes, f'{{{NS}}}note', {'category': 'current_target'}).text = row.get('current_target', '')
+        ET.SubElement(notes, f'{{{NS}}}note', {'category': 'current_target'}).text = protect_with(row.get('current_target', ''), prot.mapping)
         seg = ET.SubElement(unit, f"{{{NS}}}segment", {"state": "initial"})
         src = ET.SubElement(seg, f"{{{NS}}}source")
         src.text = prot.text
