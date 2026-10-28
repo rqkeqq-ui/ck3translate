@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDialog,
+    QDoubleSpinBox,
     QFormLayout,
     QHBoxLayout,
     QHeaderView,
@@ -105,6 +106,26 @@ class TranslateOptions(QWidget):
         self.size.setMaximumWidth(110)
         self.size.setToolTip(tr('Сколько строк отправлять одним запросом. Большой запрос может не поместиться в ответ.'))
         form.addRow(tr('Не более строк на запрос:'), self.size)
+        from ck3loc.core.pipeline import MAX_WORKERS
+        self.workers = QSpinBox()
+        self.workers.setRange(1, MAX_WORKERS)
+        self.workers.setValue(int(settings.get('translate_workers') or 1))
+        self.workers.setMaximumWidth(110)
+        self.workers.setToolTip(tr('Сколько запросов отправлять одновременно. Быстрее, но бесплатные тарифы '
+                                   'могут ограничить частые запросы.'))
+        form.addRow(tr('Параллельных запросов:'), self.workers)
+        self.pause = QDoubleSpinBox()
+        self.pause.setRange(0.0, 600.0)
+        self.pause.setDecimals(1)
+        self.pause.setSingleStep(0.5)
+        self.pause.setValue(float(settings.get('translate_pause') or 0.0))
+        self.pause.setSuffix(' ' + tr('с'))
+        self.pause.setMaximumWidth(110)
+        self.pause.setToolTip(tr('Пауза между запросами (между группами одновременных запросов). '
+                                 'Помогает не упираться в лимит частоты.'))
+        form.addRow(tr('Пауза между запросами:'), self.pause)
+        self.workers.valueChanged.connect(lambda value: settings.set_value('translate_workers', value))
+        self.pause.valueChanged.connect(lambda value: settings.set_value('translate_pause', value))
         self.use_vanilla = QCheckBox(tr('Использовать ваниль CK3'))
         self.use_memory = QCheckBox(tr('Использовать память переводов'))
         self.allow_service_memory = QCheckBox(tr('Использовать непроверенные сервисные переводы из памяти'))
@@ -144,7 +165,8 @@ class TranslateOptions(QWidget):
         return dict(retranslate=self.retranslate.isChecked(), use_vanilla=self.use_vanilla.isChecked(),
                     use_memory=self.use_memory.isChecked(),
                     allow_service_memory=self.allow_service_memory.isChecked(),
-                    rows_per_request=self.size.value())
+                    rows_per_request=self.size.value(), workers=self.workers.value(),
+                    request_pause=round(self.pause.value(), 1))
 
     def needs_vanilla(self) -> bool:
         return self.use_vanilla.isChecked() and not self.retranslate.isChecked()
@@ -154,7 +176,7 @@ class TranslateOptions(QWidget):
         return settings.get('chatgpt_model' if name == 'chatgpt' else name + '_model') or ''
 
     def set_enabled(self, enabled: bool) -> None:
-        for widget in (self.combo, self.size, self.use_vanilla, self.use_memory,
+        for widget in (self.combo, self.size, self.workers, self.pause, self.use_vanilla, self.use_memory,
                        self.allow_service_memory, self.retranslate, self.chatgpt):
             widget.setEnabled(enabled)
         if enabled:
@@ -323,7 +345,10 @@ class TranslateDialog(QDialog):
         model = self.opts.model_name()
         lines = [tr_format('Строк: {n}; подставится из ванили и памяти: {reused}; уйдёт переводчику: {sent} '
                            '({requests} запросов по {size} строк).',
-                           n=len(self.planned), reused=reused, sent=to_send, requests=requests, size=size),
+                           n=len(self.planned), reused=reused, sent=to_send, requests=requests, size=size)
+                 + (' ' + tr_format('Одновременно: {workers}, пауза между запросами: {pause} с.',
+                                    workers=self.opts.workers.value(), pause=round(self.opts.pause.value(), 1))
+                    if requests > 1 and (self.opts.workers.value() > 1 or self.opts.pause.value() > 0) else ''),
                  tr_format('Переводчик: {provider}', provider=title) + (f' · {model}' if model else '') + '. '
                  + tr('Стоимость неизвестна. Результаты сохраняются в черновик и ничего не меняют до применения.')]
         self.summary.setText('\n'.join(lines))

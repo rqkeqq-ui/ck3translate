@@ -78,7 +78,8 @@ def translate(args):
         rows = rows_to_translate(ctx, args.what, read_keys(args.keys_file, args.mod_id))
         options = dict(retranslate=args.retranslate, rows_per_request=args.rows_per_request,
                        use_memory=not args.no_memory, use_vanilla=not args.no_vanilla,
-                       allow_service_memory=args.allow_service_memory)
+                       allow_service_memory=args.allow_service_memory,
+                       workers=args.workers, request_pause=args.pause)
         planned = plan_translation(ctx, rows, args.provider, **options)
         batch_size = min(args.rows_per_request, PROVIDERS[args.provider].batch_size)
         api_rows = sum(not r['reuse'] for r in planned)
@@ -291,9 +292,16 @@ def register(sub):
     for name,callback in [('translate',translate),('batch',batch)]:
         parser=existing[name]
         parser.set_defaults(func=callback)
-        parser._option_string_actions['--provider'].choices.append('chatgpt')
+        choices=parser._option_string_actions['--provider'].choices
+        if 'chatgpt' not in choices:
+            choices.append('chatgpt')
         parser.add_argument('--rows-per-request',type=positive,default=40)
         parser.add_argument('--dry-run',action='store_true')
+    from ck3loc.core.pipeline import MAX_WORKERS
+    pt=existing['translate']
+    pt.add_argument('--workers',type=int,choices=range(1,MAX_WORKERS+1),default=1,metavar='N',
+                    help=f'одновременных запросов (1–{MAX_WORKERS})')
+    pt.add_argument('--pause',type=float,default=0.0,help='пауза между запросами, секунд')
     pt=existing['translate']
     pt._option_string_actions['--what'].choices.append('selected')
     pt.add_argument('--keys-file')

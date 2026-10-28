@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from .bundle import key_type
@@ -34,6 +36,19 @@ class TranslateStats:
     @property
     def translated(self) -> int:
         return self.from_vanilla + self.from_memory + self.from_api
+
+
+MAX_WORKERS = 8  # одновременных запросов к переводчику
+
+
+def wait_pause(seconds: float, cancellation: CancellationToken) -> bool:
+    """Пауза между волнами запросов; True — если за это время нажали «Остановить»."""
+    deadline = time.monotonic() + seconds
+    while (left := deadline - time.monotonic()) > 0:
+        if cancellation.cancelled:
+            return True
+        time.sleep(min(0.2, left))
+    return cancellation.cancelled
 
 
 _VANILLA_LOCK = threading.Lock()
@@ -110,10 +125,20 @@ def translate_rows(
     job_id: str | None = None, retranslate: bool = False,
     use_vanilla: bool = True, use_memory: bool = True,
     allow_service_memory: bool | None = None, rows_per_request: int | None = None,
+    workers: int = 1, request_pause: float = 0.0,
 ) -> TranslateStats:
-    """Translate into a durable draft; active units change only after Apply."""
+    """Translate into a durable draft; active units change only after Apply.
+
+    workers — сколько запросов отправлять одновременно; request_pause — пауза
+    в секундах между волнами запросов (для бесплатных тарифов с лимитом частоты).
+    """
     if rows_per_request is not None and rows_per_request <= 0:
         raise ValueError('Request batch size must be positive')
+    if isinstance(workers, bool) or not 1 <= int(workers) <= MAX_WORKERS:
+        raise ValueError(f'Parallel requests must be between 1 and {MAX_WORKERS}')
+    if request_pause is None or float(request_pause) < 0:
+        raise ValueError('Pause between requests must not be negative')
+    workers, request_pause = int(workers), float(request_pause)
     cancellation = cancellation or CancellationToken()
     stats = TranslateStats(total=len(rows))
     source_lang = ctx.project["source_lang"]
@@ -125,7 +150,8 @@ def translate_rows(
     glossary = load_glossary(ctx.conn, mod_id, source_lang, target_lang)
     model = provider.options.get('model', '') if hasattr(provider, 'options') else ''
     options = dict(retranslate=retranslate, use_vanilla=use_vanilla, use_memory=use_memory,
-                   allow_service_memory=allow_service_memory, rows_per_request=rows_per_request)
+                   allow_service_memory=allow_service_memory, rows_per_request=rows_per_request,
+                   workers=workers, request_pause=request_pause)
     if job_id is None:
         job_id = create_job(ctx, rows, provider.info.name, model, options)
     job = ctx.conn.execute('SELECT * FROM translation_jobs WHERE id=?', (job_id,)).fetchone()
@@ -191,32 +217,23 @@ def translate_rows(
         progress_cb(done, stats.total)
 
     batch_size = min(rows_per_request or getattr(provider, 'batch_size', 40), getattr(provider, 'batch_size', 40))
-    for i in range(0, len(pending), batch_size):
-        if cancellation.cancelled:
-            stats.state = 'stopped'
-            break
-        batch = pending[i : i + batch_size]
-        protected = [protect(r["source"]) for r in batch]
-        texts = [p.text for p in protected]
-        types = [key_type(r["key"]) for r in batch]
+    batches = [pending[i:i + batch_size] for i in range(0, len(pending), batch_size)]
+
+    def request(item):
+        """Один запрос; выполняется в рабочем потоке и базу не трогает."""
+        batch, protected, terms = item
         try:
             results = provider.translate_batch(
-                texts, source_lang, target_lang,
-                glossary=relevant_glossary(glossary, [r["source"] for r in batch]), context_types=types,
+                [p.text for p in protected], source_lang, target_lang,
+                glossary=terms, context_types=[key_type(r["key"]) for r in batch],
             )
             if len(results) != len(batch) or any(not isinstance(t, str) for t in results):
                 raise ProviderPaused('Incomplete batch: translation count does not match request')
-        except ProviderPaused as e:
-            stats.state = 'paused'
-            stats.failed.append((batch[0]['key'], str(e)))
-            break
-        except Exception as e:  # noqa: BLE001 — ошибка провайдера не роняет очередь
-            for r in batch:
-                stats.failed.append((r["key"], str(e)))
-            done += len(batch)
-            if progress_cb:
-                progress_cb(done, stats.total)
-            continue
+            return results, None
+        except Exception as exc:  # noqa: BLE001 — ошибка провайдера не роняет очередь
+            return None, exc
+
+    def save_batch(batch, protected, results):
         for r, prot, translated in zip(batch, protected, results):
             target, problems = restore(translated, prot.mapping)
             if problems:
@@ -232,10 +249,39 @@ def translate_rows(
                 stats.failed.append((r['key'], str(exc)))
                 continue
             stats.from_api += 1
+
+    # Запросы идут волнами по `workers` одновременно; ответы сохраняются здесь,
+    # в потоке задания. Остановка и пауза между запросами — между волнами.
+    for wave_start in range(0, len(batches), workers):
+        if cancellation.cancelled:
+            break
+        if wave_start and request_pause and wait_pause(request_pause, cancellation):
+            break
+        wave = [(batch, [protect(r["source"]) for r in batch],
+                 relevant_glossary(glossary, [r["source"] for r in batch]))
+                for batch in batches[wave_start:wave_start + workers]]
+        if len(wave) == 1:
+            outcomes = [request(wave[0])]
+        else:
+            with ThreadPoolExecutor(max_workers=len(wave)) as pool:
+                outcomes = list(pool.map(request, wave))
+        paused = False
+        for (batch, protected, _terms), (results, error) in zip(wave, outcomes):
+            if isinstance(error, ProviderPaused):
+                stats.state = 'paused'
+                stats.failed.append((batch[0]['key'], str(error)))
+                paused = True
+                continue
+            if error is not None:
+                stats.failed.extend((r["key"], str(error)) for r in batch)
+            else:
+                save_batch(batch, protected, results)
+            done += len(batch)
+            if progress_cb:
+                progress_cb(done, stats.total)
         ctx.conn.commit()
-        done += len(batch)
-        if progress_cb:
-            progress_cb(done, stats.total)
+        if paused:
+            break
     if cancellation.cancelled:
         stats.state = 'stopped'
     elif stats.state == 'draft' and stats.failed:
@@ -249,7 +295,7 @@ def translate_rows(
 
 def plan_translation(ctx, rows, provider_name: str, *, retranslate=False, use_vanilla=True,
                      use_memory=True, allow_service_memory=False, vanilla_lookup=None,
-                     rows_per_request=40) -> list[dict]:
+                     rows_per_request=40, workers=1, request_pause=0.0) -> list[dict]:
     """Pure preview: no requests, jobs, unit changes or memory usage timestamps."""
     from .provenance import LLM_PROVIDERS
     vl = vanilla_lookup if vanilla_lookup is not None else build_vanilla_lookup(
