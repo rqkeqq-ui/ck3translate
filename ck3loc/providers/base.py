@@ -17,6 +17,15 @@ class ProviderPaused(ProviderError):
     """Stop the whole job on account, quota, permission or connection failure."""
 
 
+class ProviderIncomplete(ProviderError):
+    """Провайдер вернул не столько строк, сколько просили.
+
+    Это не лимит и не отказ аккаунта: батч просто не сложился (модель
+    выбросила пустые строки, обрезала длинный ответ). Конвейер повторяет
+    такой батч меньшими частями, а не останавливает всё задание.
+    """
+
+
 @dataclass
 class ProviderInfo:
     name: str

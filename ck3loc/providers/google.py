@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ck3loc.core import net
 
-from .base import ProviderError, ProviderInfo, TranslationProvider, lang_code
+from .base import ProviderError, ProviderIncomplete, ProviderInfo, TranslationProvider, lang_code
 
 _URL = "https://translation.googleapis.com/language/translate/v2"
 
@@ -42,5 +42,5 @@ class GoogleProvider(TranslationProvider):
             raise ProviderError(f"Google Translate: сетевая ошибка ({e})") from e
         items = payload.get("data", {}).get("translations", [])
         if len(items) != len(texts):
-            raise ProviderError("Google Translate вернул не все строки.")
+            raise ProviderIncomplete("Google Translate вернул не все строки.")
         return [i.get("translatedText", "") for i in items]

@@ -9,7 +9,7 @@ from ck3loc.core import net
 
 import json
 
-from .base import ProviderError, ProviderInfo, TranslationProvider
+from .base import ProviderError, ProviderIncomplete, ProviderInfo, TranslationProvider
 
 _LANG_NAMES = {
     "english": "английского", "french": "французского", "german": "немецкого",
@@ -44,6 +44,11 @@ def _build_user_prompt(texts, source_lang, target_lang, glossary, context_types)
 
 
 def _parse_array(raw: str, expected: int) -> list[str]:
+    """Разобрать JSON-массив переводов.
+
+    Неполный или обрезанный ответ — это ``ProviderIncomplete``: конвейер
+    повторит батч меньшими частями, а не потеряет строки и не остановит задание.
+    """
     raw = raw.strip()
     if raw.startswith("```"):
         raw = raw.strip("`")
@@ -51,13 +56,13 @@ def _parse_array(raw: str, expected: int) -> list[str]:
             raw = raw[4:]
     start, end = raw.find("["), raw.rfind("]")
     if start == -1 or end == -1:
-        raise ProviderError("LLM вернула не JSON-массив.")
+        raise ProviderIncomplete("LLM вернула не JSON-массив.")
     try:
         arr = json.loads(raw[start : end + 1])
     except json.JSONDecodeError as e:
-        raise ProviderError(f"LLM вернула повреждённый JSON: {e.msg}") from e
+        raise ProviderIncomplete(f"LLM вернула повреждённый JSON: {e.msg}") from e
     if not isinstance(arr, list) or len(arr) != expected:
-        raise ProviderError(
+        raise ProviderIncomplete(
             f"LLM вернула {len(arr) if isinstance(arr, list) else '?'} строк "
             f"вместо {expected}."
         )

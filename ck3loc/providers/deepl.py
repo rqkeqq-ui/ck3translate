@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from ck3loc.core import net
 
-from .base import ProviderError, ProviderInfo, TranslationProvider, lang_code
+from .base import ProviderError, ProviderIncomplete, ProviderInfo, TranslationProvider, lang_code
 
 
 class DeepLProvider(TranslationProvider):
@@ -41,5 +41,5 @@ class DeepLProvider(TranslationProvider):
             raise ProviderError(f"DeepL: сетевая ошибка ({e})") from e
         items = payload.get("translations", [])
         if len(items) != len(texts):
-            raise ProviderError("DeepL вернул не все строки.")
+            raise ProviderIncomplete("DeepL вернул не все строки.")
         return [i.get("text", "") for i in items]

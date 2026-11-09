@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from ck3loc.core import net
 
-from .base import ProviderError, ProviderInfo, TranslationProvider, lang_code
+from .base import ProviderError, ProviderIncomplete, ProviderInfo, TranslationProvider, lang_code
 
 _URL = "https://translate.api.cloud.yandex.net/translate/v2/translate"
 
@@ -50,5 +50,5 @@ class YandexProvider(TranslationProvider):
             raise ProviderError(f"Yandex Translate: сетевая ошибка ({e})") from e
         items = payload.get("translations", [])
         if len(items) != len(texts):
-            raise ProviderError("Yandex Translate вернул не все строки.")
+            raise ProviderIncomplete("Yandex Translate вернул не все строки.")
         return [i.get("text", "") for i in items]

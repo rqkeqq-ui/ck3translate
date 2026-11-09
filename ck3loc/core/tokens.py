@@ -97,6 +97,18 @@ def tokenize(value: str) -> list[Token]:
 
 CODE_KINDS = {"dollar", "bracket", "icon", "fmt_open", "fmt_close", "newline"}
 
+# Строка только из кодов-маркеров, цифр, знаков и пробелов: переводить нечего.
+_NOTHING_TO_TRANSLATE = re.compile(rf"(?:{MARK_OPEN}T\d+{MARK_CLOSE}|[\W\d_])*")
+
+
+def nothing_to_translate(protected_text: str) -> bool:
+    """True, если переводить нечего: в строке нет ни одной буквы.
+
+    Такие значения (пустые, пробелы, одни игровые коды) не отправляются
+    переводчику: модели выбрасывают их из ответа и ломают весь батч.
+    """
+    return _NOTHING_TO_TRANSLATE.fullmatch(protected_text) is not None
+
 
 @dataclass
 class Protected:

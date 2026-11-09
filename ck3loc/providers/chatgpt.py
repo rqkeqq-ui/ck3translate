@@ -21,7 +21,7 @@ import httpx
 
 from ck3loc.core import net, settings
 from ck3loc.core.db import data_dir
-from .base import ProviderInfo, ProviderPaused, TranslationProvider
+from .base import ProviderIncomplete, ProviderInfo, ProviderPaused, TranslationProvider
 
 ISSUER = 'https://auth.openai.com'
 RESOURCE = 'https://api.openai.com/v1'
@@ -414,6 +414,9 @@ class ChatGPTProvider(TranslationProvider):
                             kind = event.get('type', '')
                             if kind in {'response.failed', 'response.incomplete', 'error'}:
                                 code = (event.get('response', {}).get('error') or event.get('error') or {}).get('code', kind)
+                                if kind == 'response.incomplete':
+                                    # Лимит вывода: ответ обрезан. Повторяем батч меньшими частями.
+                                    raise ProviderIncomplete(f'ChatGPT response incomplete: {code}')
                                 raise ProviderPaused(f'ChatGPT response stopped: {code}')
                             if kind == 'response.output_text.delta':
                                 chunks.append(event.get('delta', ''))
@@ -430,4 +433,4 @@ class ChatGPTProvider(TranslationProvider):
                 raise ValueError('Incomplete translation array')
             return result
         except ValueError as exc:
-            raise ProviderPaused('ChatGPT returned an invalid translation batch') from exc
+            raise ProviderIncomplete('ChatGPT returned an invalid translation batch') from exc

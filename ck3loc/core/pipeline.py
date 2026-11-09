@@ -18,8 +18,8 @@ from .scanner import semantic_hash
 from .status import MACHINE
 from .store import tm_lookup_variant
 from .jobs import CancellationToken, create_job, stage_result, unit_value
-from ck3loc.providers.base import ProviderPaused
-from .tokens import protect, restore, validate_translation
+from ck3loc.providers.base import ProviderIncomplete, ProviderPaused
+from .tokens import nothing_to_translate, protect, restore, validate_translation
 from .vanilla import load_vanilla_index
 
 
@@ -243,19 +243,45 @@ def translate_rows(
     batch_size = min(rows_per_request or getattr(provider, 'batch_size', 40), getattr(provider, 'batch_size', 40))
     batches = [pending[i:i + batch_size] for i in range(0, len(pending), batch_size)]
 
+    def send(batch, protected, terms):
+        """Один запрос к переводчику; в него уходят только строки, которые есть что переводить.
+
+        Пустые строки и строки из одних кодов возвращаются как есть: модели
+        выбрасывают их из ответа, из-за чего перестаёт совпадать число строк.
+        """
+        positions = [i for i, p in enumerate(protected) if not nothing_to_translate(p.text)]
+        if not positions:
+            return [p.text for p in protected]
+        results = provider.translate_batch(
+            [protected[i].text for i in positions], source_lang, target_lang,
+            glossary=terms, context_types=[key_type(batch[i]["key"]) for i in positions],
+        )
+        if len(results) != len(positions) or any(not isinstance(t, str) for t in results):
+            raise ProviderIncomplete('Incomplete batch: translation count does not match request')
+        merged = [p.text for p in protected]
+        for i, translated in zip(positions, results):
+            merged[i] = translated
+        return merged
+
     def request(item):
-        """Один запрос; выполняется в рабочем потоке и базу не трогает."""
+        """Один запрос в рабочем потоке; базу не трогает.
+
+        Если провайдер вернул не столько строк, батч дробится надвое и
+        повторяется — одна сломанная строка не должна уносить весь батч и
+        останавливать задание. Возвращает куски
+        (строки, защищённые, переводы или None, ошибка или None).
+        """
         batch, protected, terms = item
         try:
-            results = provider.translate_batch(
-                [p.text for p in protected], source_lang, target_lang,
-                glossary=terms, context_types=[key_type(r["key"]) for r in batch],
-            )
-            if len(results) != len(batch) or any(not isinstance(t, str) for t in results):
-                raise ProviderPaused('Incomplete batch: translation count does not match request')
-            return results, None
+            return [(batch, protected, send(batch, protected, terms), None)]
+        except ProviderIncomplete as exc:
+            if len(batch) <= 1:
+                return [(batch, protected, None, exc)]
+            middle = len(batch) // 2
+            return (request((batch[:middle], protected[:middle], terms))
+                    + request((batch[middle:], protected[middle:], terms)))
         except Exception as exc:  # noqa: BLE001 — ошибка провайдера не роняет очередь
-            return None, exc
+            return [(batch, protected, None, exc)]
 
     def save_batch(batch, protected, results):
         for r, prot, translated in zip(batch, protected, results):
@@ -290,16 +316,18 @@ def translate_rows(
             with ThreadPoolExecutor(max_workers=len(wave)) as pool:
                 outcomes = list(pool.map(request, wave))
         paused = False
-        for (batch, protected, _terms), (results, error) in zip(wave, outcomes):
-            if isinstance(error, ProviderPaused):
-                stats.state = 'paused'
-                stats.failed.append((batch[0]['key'], str(error)))
-                paused = True
-                continue
-            if error is not None:
-                stats.failed.extend((r["key"], str(error)) for r in batch)
-            else:
-                save_batch(batch, protected, results)
+        for (batch, _protected, _terms), chunks in zip(wave, outcomes):
+            for sub_batch, sub_protected, results, error in chunks:
+                if error is None:
+                    save_batch(sub_batch, sub_protected, results)
+                elif isinstance(error, ProviderPaused):
+                    stats.state = 'paused'
+                    stats.failed.append((sub_batch[0]['key'], str(error)))
+                    paused = True
+                else:
+                    stats.failed.extend((r["key"], str(error)) for r in sub_batch)
+            # Строки разобранного батча считаем всегда, даже если он упал:
+            # иначе полоса прогресса замирает на нуле при первой же ошибке.
             done += len(batch)
             if progress_cb:
                 progress_cb(done, stats.total)
